@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"log"
+	"encoding/json"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -62,8 +63,31 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 			return 
 		}
 		
-		//storing the access token in session
-		session.Set("access_token", tok.AccessToken)
+		client := cfg.Client(context.Background(), tok)
+		resp, err := client.Get(Email)
+		if err != nil {
+    		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user info"})
+			return
+		}
+		defer resp.Body.Close()
+
+		var userInfo struct {
+			Email   	  string `json:"email"`	
+			VerifiedEmail string `json:"verified_email"`
+			UserName 		  string `json:"name"`
+			Picture 	  string `json:"picture"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+    		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user info"})
+    		return
+		}
+
+		// setting values in session
+		session.Set("username", userInfo.UserName)
+		session.Set("Email", userInfo.Email)
+		session.Set("VerifiedEmail", userInfo.VerifiedEmail)
+		session.Set("Picture", userInfo.Picture)
+
 		if err := session.Save(); err != nil {
 			log.Printf("[SESSION] Failed to save: %v\n", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "session save failed"})
