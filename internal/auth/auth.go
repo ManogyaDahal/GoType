@@ -6,8 +6,11 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-var Email string =  "https://www.googleapis.com/auth/userinfo.email" 
-var Profile string = "https://www.googleapis.com/auth/userinfo.profile"
+//defines scopes
+var ScopeEmail string =  "https://www.googleapis.com/auth/userinfo.email" 
+var ScopeProfile string = "https://www.googleapis.com/auth/userinfo.profile"
+//From where it fetches data 
+var UserInfo string  = "https://www.googleapis.com/oauth2/v2/userinfo" 
 
 // returns the Initialized oauth configuration
 func InitOauth() *oauth2.Config {
@@ -16,6 +19,6 @@ func InitOauth() *oauth2.Config {
 		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		Endpoint: google.Endpoint,
 		RedirectURL: "http://localhost:8080/auth/google/callback" ,
-		Scopes: []string{ Email, Profile},
+		Scopes: []string{ ScopeEmail, ScopeProfile},
 	}
 }

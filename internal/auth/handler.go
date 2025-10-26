@@ -12,10 +12,8 @@ import (
 )
 
 //Handler the Home route
-func HomeHandler() gin.HandlerFunc {
-	return func(c *gin.Context){
+func HomeHandler(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message":"Welcome to goType"})
-	}
 }
 
 // handles the /login route
@@ -64,7 +62,7 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		}
 		
 		client := cfg.Client(context.Background(), tok)
-		resp, err := client.Get(Email)
+		resp, err := client.Get(UserInfo)
 		if err != nil {
     		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user info"})
 			return
@@ -72,18 +70,21 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		defer resp.Body.Close()
 
 		var userInfo struct {
-			Email   	  string `json:"email"`	
-			VerifiedEmail string `json:"verified_email"`
-			UserName 		  string `json:"name"`
-			Picture 	  string `json:"picture"`
-		}
+    		ID            string `json:"id"`
+    		Email         string `json:"email"`
+    		VerifiedEmail bool   `json:"verified_email"`
+    		Name          string `json:"name"`
+    		GivenName     string `json:"given_name"`
+    		FamilyName    string `json:"family_name"`
+    		Picture       string `json:"picture"`
+}
 		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
     		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user info"})
     		return
 		}
 
 		// setting values in session
-		session.Set("username", userInfo.UserName)
+		session.Set("Name", userInfo.Name)
 		session.Set("Email", userInfo.Email)
 		session.Set("VerifiedEmail", userInfo.VerifiedEmail)
 		session.Set("Picture", userInfo.Picture)
@@ -99,11 +100,15 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 }
 
 // handles the /logout route
-func LogoutHandler(cfg *oauth2.Config) gin.HandlerFunc {
-	return func(c *gin.Context){
-		session := sessions.Default(c)
-		session.Clear()
-		session.Save()
-		c.Redirect(http.StatusOK, "/")
-	}
+func LogoutHandler(c *gin.Context)  {
+	session := sessions.Default(c)
+	session.Clear()
+    session.Options(sessions.Options{    
+        MaxAge: -1,
+		Path:   "/", 
+    })
+    if err := session.Save(); err != nil {
+        log.Println("Failed to clear session:", err)
+    }
+	c.Redirect(http.StatusFound, "/")
 }
