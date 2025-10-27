@@ -30,7 +30,8 @@ func NewHub() *Hub {
 //Run is the main event loop 
 func (h *Hub)Run(){
 	for{ 
-		select {
+		//it might result in deadlock (empty select)
+		select { 
 		case client := <-h.register:
 			h.clients[client] = true
 

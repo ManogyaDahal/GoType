@@ -12,6 +12,7 @@ type Clients struct{
 	hub 	   *Hub				// refrence to hub
 	connection *websocket.Conn //actual websocket connection
 	send       chan []byte 	   // channel for outgoing messages
+	name 	   string 		   //name of the client
 }
 
 const (
@@ -21,7 +22,7 @@ const (
 )
 
 //Reads the message from client and
-//Broadcasts it to the hub's broadcast channel
+//Broadcasts it to the hub's broadcast channel (input ie. client->server)
 func (c *Clients) ReadPump() {
 	defer func(){
 		c.hub.unregistered <- c
@@ -45,7 +46,8 @@ func (c *Clients) ReadPump() {
 	}
 }
 
-// continously sends the message from the `send` channel to websocket
+// continously sends the message from the `send` channel to websocket.
+// (ie. output: server ->client )
 func(c *Clients) WritePump(){ 
 	ticker := time.NewTicker(pingPeriod)
 	defer func(){
