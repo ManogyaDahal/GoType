@@ -29,8 +29,9 @@ func (c *Clients) ReadPump() {
 		c.connection.Close()
 	}()
 
-	c.connection.SetReadLimit(512)
+	c.connection.SetReadLimit(512) //protects oversized messages
 	c.connection.SetReadDeadline(time.Now().Add(pongWait)) // handle error
+	//reloads the timeout whenever client responds to pings
 	c.connection.SetPongHandler( func(string)error {
 		c.connection.SetReadDeadline(time.Now().Add(pongWait))	
 		return nil

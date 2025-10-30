@@ -12,7 +12,15 @@ import (
 
 var upgrader = &websocket.Upgrader{
 	// Make origins stronglater
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		//add frontend or prod domain here
+		if origin == "http://localhost:5173" || origin == "http://localhost:8080" {
+		return true 
+		}
+		log.Printf("[WS] Blocked connection from unauthorized origin: %s\n", origin)
+		return false
+	},
 }
 
 var hub = NewHub()
@@ -21,6 +29,13 @@ func Init(){
 }
 
 func AuthenticatedWSHandler(c *gin.Context) {
+	//checking for valid websocket upgrade
+	if !websocket.IsWebSocketUpgrade(c.Request) {
+		c.JSON(http.StatusBadRequest, 
+		gin.H{"error":"Expected websocket upgrade"})
+		return
+	}
+
 	// fetching user email to check if user is looged in
 	session := sessions.Default(c)
 	name := session.Get("Name")
@@ -35,10 +50,13 @@ func AuthenticatedWSHandler(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
         log.Printf("[WS] Upgrade failed: %v\n", err)
+    	c.AbortWithStatus(http.StatusBadRequest)
         // Important: DO NOT call c.JSON() here.
         // WebSocket handshake already writes headers, so just return
 		return
 	}
+	log.Println("[WS] Upgraded connection for:", name)
+	defer func() { log.Println("[WS] Closed connection for:", name) }()
 
 	client := &Clients{
 		hub: hub, 	
