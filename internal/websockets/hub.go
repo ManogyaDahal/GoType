@@ -1,6 +1,10 @@
 // This file defines the central hub. Global event loop 
 
 package websockets
+import(
+	"time"
+	"log"
+)
 
 // Hub manages all central websocket connection with clients. 
 // and handles all broadcasting messages between them
@@ -14,7 +18,11 @@ type Hub struct{
 	//channel for registering and unregistering clients
 	register     chan *Clients
 	unregistered chan *Clients
+
+	//Error management
+	errors chan ErrorEvent
 }
+
 
 // Initializes a new hub
 func NewHub() *Hub {
@@ -23,6 +31,7 @@ func NewHub() *Hub {
 		broadcast: make(chan []byte),
 		register: make(chan *Clients),
 		unregistered: make(chan *Clients),
+		errors : make(chan ErrorEvent),
 	}
 }
 
@@ -51,6 +60,37 @@ func (h *Hub)Run(){
 				delete(h.clients, client)
 				}	
 			}
+
+		case errorEvent := <-h.errors:
+			//centralized logging
+			log.Printf("[%s] [%s] [client: %s] %s: %v\n", 
+			errorEvent.Time.Format("15:04:05"),
+			errorEvent.Source, 
+			errorEvent.Client,
+			errorEvent.Message,
+			errorEvent.Error,
+			)
+
+			// can use switch for various severity [info], [warning]
+			if errorEvent.Severity == "fatal"{
+				//do something
+			}
 		}
 	}
+}
+
+//For error reports
+func (h *Hub) ErrorReport(c *Clients, src string, sev Severity, msg string, err error) {
+    select {
+    case h.errors <- ErrorEvent{
+        Time:      time.Now(),
+        Client: c.name,
+        Source:    src,
+        Severity:  sev,
+        Message:   msg,
+        Error:     err,
+    }:
+    default:
+        log.Println("[Hub] Dropped error event (channel full)")
+    }
 }

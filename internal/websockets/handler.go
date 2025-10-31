@@ -31,6 +31,7 @@ func Init(){
 func AuthenticatedWSHandler(c *gin.Context) {
 	//checking for valid websocket upgrade
 	if !websocket.IsWebSocketUpgrade(c.Request) {
+		hub.ErrorReport(nil, "handler", Info, "Expected websocket upgrade", nil)
 		c.JSON(http.StatusBadRequest, 
 		gin.H{"error":"Expected websocket upgrade"})
 		return
@@ -41,6 +42,7 @@ func AuthenticatedWSHandler(c *gin.Context) {
 	name := session.Get("Name")
 	log.Println(name)
 	if name == nil || name == ""{
+		hub.ErrorReport(nil, "handler", Info, "The user is not currently logged in", nil)
 		c.JSON(http.StatusUnauthorized, 
 		gin.H {"error":"The user is not currently logged in"})
 		return
@@ -49,14 +51,12 @@ func AuthenticatedWSHandler(c *gin.Context) {
 	//upgrading connection from http to websocket
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-        log.Printf("[WS] Upgrade failed: %v\n", err)
+		hub.ErrorReport(nil, "handler", Error, "Upgrade failed", err)
     	c.AbortWithStatus(http.StatusBadRequest)
         // Important: DO NOT call c.JSON() here.
         // WebSocket handshake already writes headers, so just return
 		return
 	}
-	log.Println("[WS] Upgraded connection for:", name)
-	defer func() { log.Println("[WS] Closed connection for:", name) }()
 
 	client := &Clients{
 		hub: hub, 	

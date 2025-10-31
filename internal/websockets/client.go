@@ -1,7 +1,6 @@
 package websockets
 
 import (
-	"log"
 	"time"
 	"net"
 
@@ -44,13 +43,13 @@ func (c *Clients) ReadPump() {
 		// classifying the error to get specific error
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[Client %v]: unexpected close: %v", c.name, err)
+				c.hub.ErrorReport(c, "read", Error , "unexpected close",err)
 			} else if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				log.Printf("[Client %v]: normal closure", c.name)
+				c.hub.ErrorReport(c, "read", Error, "normal closure",err)
 			} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				log.Printf("[Client %v]: read timeout", c.name)
+				c.hub.ErrorReport(c, "read", Error, "client timeout",err)
 			} else {
-				log.Printf("[Client %v]: read error: %v", c.name, err)
+				c.hub.ErrorReport(c, "read", Error, "read error",err)
 			}
 			break	
 		}
@@ -73,19 +72,19 @@ func(c *Clients) WritePump(){
 			_ = c.connection.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				_ = c.connection.WriteMessage(websocket.CloseMessage, []byte{})
-				log.Printf("[Client %v]: send channel closed by hub", c.name)
+				c.hub.ErrorReport(c, "write", Warning, "send channel closed by hub",nil)
 				return
 			}
 
 			w, err := c.connection.NextWriter(websocket.TextMessage)
 			if err != nil {
-				log.Printf("[Client %v]: write setup error: %v", c.name, err)
+				c.hub.ErrorReport(c, "write", Error, "write setup error",err)
 				return 
 			}
 
 			//write main message
 			if _, err := w.Write(message); err != nil {
-				log.Printf("[Client %v]: write error: %v", c.name, err)
+				c.hub.ErrorReport(c, "write", Error, "write error",err)
 				_ = w.Close()
 				return
 			}
@@ -93,14 +92,14 @@ func(c *Clients) WritePump(){
 			//add queued message into same websocket frame
 			for i := 0; i < len(c.send); i++ {
 				nextMsg := <-c.send
-				//no seperator is used for the write
-				if _, err := w.Write([]byte{}); err == nil {
-					_, _ = w.Write(nextMsg)
+				if _, err := w.Write(nextMsg); err != nil {
+					c.hub.ErrorReport(c, "write", Error, "message queue write failed", err)
+					break
 				}
 			}
 
 			if err := w.Close(); err != nil{
-				log.Printf("[Client %v]: writer close error: %v", c.name, err)
+				c.hub.ErrorReport(c, "write", Error, "writer close error",err)
 				return
 			}
 
@@ -110,11 +109,11 @@ func(c *Clients) WritePump(){
 			if err := c.connection.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
 				// classify error
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("[Client %v]: ping failed, connection lost: %v", c.name, err)
+					c.hub.ErrorReport(c, "write", Error, "ping failed, connection lost",err)
 				} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-					log.Printf("[Client %v]: ping timeout", c.name)
+					c.hub.ErrorReport(c, "write", Error, "Ping timeout",err)
 				} else {
-					log.Printf("[Client %v]: write pump error: %v", c.name, err)
+					c.hub.ErrorReport(c, "write", Error, "write pump error",err)
 				}
 				return
 			}
