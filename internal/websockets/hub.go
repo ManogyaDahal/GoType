@@ -4,11 +4,20 @@ package websockets
 import(
 	"time"
 	"log"
+	"sync"
+	"crypto/rand"
 )
+
+//Manages all hubs
+type HubManager struct{
+	hubs map [string]*Hub //Stores the key for a hub
+	mu   sync.RWMutex	  //for concurrency safety
+}
 
 // Hub manages all central websocket connection with clients. 
 // and handles all broadcasting messages between them
 type Hub struct{
+	roomId 		 string
 	// All connected clients	
 	clients 	 map[*Clients]bool
 
@@ -21,12 +30,22 @@ type Hub struct{
 
 	//Error management
 	errors chan ErrorEvent
+
+	//Hub manager
+	hubManager  *HubManager
 }
 
+//new hub manager
+func NewHubManager() *HubManager {
+	return &HubManager{
+		hubs:make(map[string]*Hub) ,
+	}
+}
 
 // Initializes a new hub
 func NewHub() *Hub {
 	return &Hub{
+		roomId: GenerateRoomId(),
 		clients: make(map[*Clients]bool),
 		broadcast: make(chan []byte),
 		register: make(chan *Clients),
@@ -35,6 +54,45 @@ func NewHub() *Hub {
 	}
 }
 
+//NOTE: It might generate same roomId for two hubs so I have to manage that too
+//Generating a random roomId
+func GenerateRoomId() string{
+	data := make([]byte, 16)
+	rand.Read(data)
+	return string(data)
+}
+
+// Get hub returns the hub to access specific hub
+func (m *HubManager) GetHub(roomID string) *Hub{
+	m.mu.RLock() // for read lock
+	if hub, exists := m.hubs[roomID]; exists{
+		m.mu.RUnlock()
+		return hub	
+	} else { m.mu.RUnlock() }
+
+	//If hub is not found we create new hub by doing rw lock
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	//double checking for the hub  if another go routine made it
+	if hub, exists := m.hubs[roomID]; exists{
+		return hub	
+	}
+
+	log.Printf("[HubManager]: Is making new Hub")
+	newHub := NewHub()
+	m.hubs[roomID] = newHub
+	go newHub.Run()
+	return newHub
+}
+
+//Deleting the empty hub
+func (m *HubManager) DeleteHub(roomId string){
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.hubs, roomId)
+	log.Printf("Removed the hub with the ID: %s", roomId)
+}
 
 //Run is the main event loop 
 func (h *Hub)Run(){
@@ -48,6 +106,9 @@ func (h *Hub)Run(){
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(h.unregistered)
+			}
+			if len(h.clients) == 0 && h.hubManager != nil{
+				h.hubManager.DeleteHub(hub.roomId)
 			}
 
 		case message := <-h.broadcast: 
