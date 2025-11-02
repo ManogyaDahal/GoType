@@ -16,13 +16,16 @@ func SetupRouters() *gin.Engine{
 	// oauth setup
 	cfg := auth.InitOauth()
 
+	//hub manager
+	manager := websockets.NewHubManager()
+
 	// defining routes
 	router.GET("/", auth.HomeHandler)
 	router.GET("/login", auth.LoginHandler(cfg))
 	router.GET("/auth/google/callback", auth.CallbackHandler(cfg))
 	router.GET("/logout", auth.LogoutHandler)
 
-	router.GET("/ws", websockets.AuthenticatedWSHandler)
+	router.GET("/ws", websockets.AuthenticatedWSHandler(manager))
 
 	return router
 }

@@ -1,11 +1,13 @@
-// This file defines the central hub. Global event loop 
+// This file defines the central hub. Global event loop
 
 package websockets
-import(
-	"time"
+
+import (
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"sync"
-	"crypto/rand"
+	"time"
 )
 
 //Manages all hubs
@@ -54,34 +56,46 @@ func NewHub() *Hub {
 	}
 }
 
-//NOTE: It might generate same roomId for two hubs so I have to manage that too
 //Generating a random roomId
 func GenerateRoomId() string{
 	data := make([]byte, 16)
 	rand.Read(data)
-	return string(data)
+	return hex.EncodeToString(data)
+}
+
+// If generated roomId matches to any of the existing ones it returns 
+//the new generated roomId, else it returns the roomId that is passed as 
+//parameter
+func (h *HubManager)CheckIfRoomAlreadyExists(roomId string) string {
+	for {
+		if _, ok := h.hubs[roomId]; !ok{
+			return roomId
+		} 
+		roomId = GenerateRoomId() 
+	}
 }
 
 // Get hub returns the hub to access specific hub
-func (m *HubManager) GetHub(roomID string) *Hub{
+func (m *HubManager) GetExistringHub(roomID string) *Hub{
 	m.mu.RLock() // for read lock
+	defer m.mu.RUnlock()
 	if hub, exists := m.hubs[roomID]; exists{
-		m.mu.RUnlock()
 		return hub	
-	} else { m.mu.RUnlock() }
+	}  
+	return nil
+}
 
+
+func (m *HubManager) CreateNewHub() *Hub {
 	//If hub is not found we create new hub by doing rw lock
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	//double checking for the hub  if another go routine made it
-	if hub, exists := m.hubs[roomID]; exists{
-		return hub	
-	}
 
 	log.Printf("[HubManager]: Is making new Hub")
 	newHub := NewHub()
-	m.hubs[roomID] = newHub
+	newHub.roomId = m.CheckIfRoomAlreadyExists(newHub.roomId)
+	m.hubs[newHub.roomId] = newHub
 	go newHub.Run()
 	return newHub
 }
