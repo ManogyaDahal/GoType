@@ -1,8 +1,9 @@
 package websockets
 
 import (
-	"time"
+	"encoding/json"
 	"net"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -11,7 +12,7 @@ import (
 type Clients struct{
 	hub 	   *Hub				// refrence to hub
 	connection *websocket.Conn //actual websocket connection
-	send       chan []byte 	   // channel for outgoing messages
+	send       chan []byte// channel for outgoing messages
 	name 	   string 		   //name of the client
 }
 
@@ -38,7 +39,7 @@ func (c *Clients) ReadPump() {
 	})
 
 	for {
-		_, message, err := c.connection.ReadMessage()
+		_, data, err := c.connection.ReadMessage()
 
 		// classifying the error to get specific error
 		if err != nil {
@@ -53,6 +54,15 @@ func (c *Clients) ReadPump() {
 			}
 			break	
 		}
+		var message Message
+		if err := json.Unmarshal(data, &message); err != nil {
+			hub.ErrorReport(c, "read", "error", "Error in json Unmarshal", err)
+			continue
+		}
+		message.Sender = c.name
+		message.RoomId = c.hub.roomId
+		message.TimeStamp = time.Now()
+		message.Type = BroadcastMessage //remove this after frontend is built
 		c.hub.broadcast <- message
 	}
 }

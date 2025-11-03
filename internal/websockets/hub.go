@@ -24,7 +24,7 @@ type Hub struct{
 	clients 	 map[*Clients]bool
 
 	//channel for broadcasting incoming messages
-	broadcast 	 chan []byte
+	broadcast 	 chan Message
 
 	//channel for registering and unregistering clients
 	register     chan *Clients
@@ -49,7 +49,7 @@ func NewHub() *Hub {
 	return &Hub{
 		roomId: GenerateRoomId(),
 		clients: make(map[*Clients]bool),
-		broadcast: make(chan []byte),
+		broadcast: make(chan Message),
 		register: make(chan *Clients),
 		unregistered: make(chan *Clients),
 		errors : make(chan ErrorEvent),
@@ -125,16 +125,11 @@ func (h *Hub)Run(){
 				h.hubManager.DeleteHub(hub.roomId)
 			}
 
-		case message := <-h.broadcast: 
-			for client := range h.clients {
-				select{
-				case client.send <- message:
-				default: 
-				// client channel full assume conn is broken
-				close(client.send)
-				delete(h.clients, client)
-				}	
+		case msg := <-h.broadcast: 
+			if err := ValidateMessage(&msg); err != nil {
+				//handle the error encountered
 			}
+			messageHandeling(msg, h)	
 
 		case errorEvent := <-h.errors:
 			//centralized logging
