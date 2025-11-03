@@ -115,11 +115,13 @@ func (h *Hub)Run(){
 		select { 
 		case client := <-h.register:
 			h.clients[client] = true
+			SendSystemMessages(UserJoinedSysMessage, client, h)
 
 		case client := <-h.unregistered:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(h.unregistered)
+				SendSystemMessages(UserLeftSysMessage, client, h)
 			}
 			if len(h.clients) == 0 && h.hubManager != nil{
 				h.hubManager.DeleteHub(hub.roomId)
