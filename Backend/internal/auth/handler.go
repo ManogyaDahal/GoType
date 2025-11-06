@@ -95,7 +95,7 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 			return
 		}
 		log.Println("[CALLBACK] Redirecting to home...")
-		c.Redirect(http.StatusFound, "/")
+		c.Redirect(http.StatusFound, "http://localhost:5173/")
 	}
 }
 
@@ -110,5 +110,18 @@ func LogoutHandler(c *gin.Context)  {
     if err := session.Save(); err != nil {
         log.Println("Failed to clear session:", err)
     }
-	c.Redirect(http.StatusFound, "/")
+	c.Redirect(http.StatusFound, "http://localhost:5173/")
+}
+
+// handler Returns the current user
+func WhoAmI(c *gin.Context){
+	session := sessions.Default(c)
+	name := session.Get("Name")
+
+    if name == nil {
+        c.JSON(http.StatusUnauthorized, gin.H{"error": "User not logged In"})
+        return
+    }
+
+    c.JSON(http.StatusOK, gin.H{"name": name})
 }
