@@ -1,12 +1,21 @@
-// // src/App.jsx
-function App() {
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Home from "./pages/Home";
+// import Multiplayer from "./pages/Multiplayer";
+// import Lobby from "./pages/Lobby";
+// import Singleplayer from "./pages/Singleplayer";
+// import GameRoom from "./pages/GameRoom";
+
+export default function App() {
   return (
-    <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-      <h1 className="text-4xl font-bold">Go Type</h1>
-      <p className="mt-4 text-gray-300"> Welcome to the GoType application</p>
-    </div>
+    <Router>
+      <Routes>
+        <Route path="/" element={<Home />} />
+      </Routes>
+    </Router>
   );
 }
 
-export default App;
-
+        // <Route path="/multiplayer" element={<Multiplayer />} />
+        // <Route path="/lobby" element={<Lobby />} />
+        // <Route path="/singleplayer" element={<Singleplayer />} />
+        // <Route path="/game" element={<GameRoom />} />
