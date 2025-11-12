@@ -2,7 +2,6 @@ package websockets
 
 type Action string
 const (
-	ActionCreate Action = "create"
 	ActionDelete Action = "delete"
 	ActionJoin   Action = "join"
 )
@@ -10,7 +9,7 @@ const (
 //Function tells if the action is valid
 func IsValidAction(a Action) bool {
 	switch a {
-	case ActionCreate, ActionJoin ,ActionDelete:
+	case ActionJoin ,ActionDelete:
 		return true
 	default:
 		return false

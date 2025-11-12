@@ -5,6 +5,7 @@ package websockets
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -52,7 +53,7 @@ func NewHub() *Hub {
 		broadcast: make(chan Message),
 		register: make(chan *Clients),
 		unregistered: make(chan *Clients),
-		errors : make(chan ErrorEvent),
+		errors : make(chan ErrorEvent, 100), //buffered channel to prevent blocking 
 	}
 }
 
@@ -95,6 +96,8 @@ func (m *HubManager) CreateNewHub() *Hub {
 	log.Printf("[HubManager]: Is making new Hub")
 	newHub := NewHub()
 	newHub.roomId = m.CheckIfRoomAlreadyExists(newHub.roomId)
+	// CHANGED: Set hubManager reference so hub can delete itself when empty
+	newHub.hubManager = m
 	m.hubs[newHub.roomId] = newHub
 	go newHub.Run()
 	return newHub
@@ -115,21 +118,25 @@ func (h *Hub)Run(){
 		select { 
 		case client := <-h.register:
 			h.clients[client] = true
+			h.BroadcastPlayerList()
 			SendSystemMessages(UserJoinedSysMessage, client, h)
 
 		case client := <-h.unregistered:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(h.unregistered)
+				close(client.send) //edit
+				h.BroadcastPlayerList()
 				SendSystemMessages(UserLeftSysMessage, client, h)
 			}
 			if len(h.clients) == 0 && h.hubManager != nil{
-				h.hubManager.DeleteHub(hub.roomId)
+				h.hubManager.DeleteHub(h.roomId)
+				return //edit
 			}
 
 		case msg := <-h.broadcast: 
 			if err := ValidateMessage(&msg); err != nil {
-				//handle the error encountered
+				log.Printf("[Hub] Message validation failed: %v", err)
+				continue
 			}
 			messageHandeling(msg, h)	
 
@@ -153,10 +160,15 @@ func (h *Hub)Run(){
 
 //For error reports
 func (h *Hub) ErrorReport(c *Clients, src string, sev Severity, msg string, err error) {
+		clientName := "unknown"
+		if c != nil {
+			clientName = c.name
+		}
+
     select {
     case h.errors <- ErrorEvent{
         Time:      time.Now(),
-        Client: c.name,
+        Client:    clientName,
         Source:    src,
         Severity:  sev,
         Message:   msg,
@@ -165,4 +177,28 @@ func (h *Hub) ErrorReport(c *Clients, src string, sev Severity, msg string, err 
     default:
         log.Println("[Hub] Dropped error event (channel full)")
     }
+}
+
+func (h *Hub)BroadcastPlayerList(){
+	players := []map[string]interface{}{}
+	for client := range h.clients {
+		players = append(players, map[string]interface{}{
+			"name": client.name,
+			"ready": client.ready,
+		})
+	}
+	
+	data, err := json.Marshal(players)
+	if err != nil {
+		log.Printf("[Hub] failed to marshal player list: %v", err)
+		return
+	}
+	msg := Message{
+		Type: "player_list",
+		Content: data,
+		RoomId: h.roomId,
+		TimeStamp: time.Now(),
+	}
+
+	h.broadcast <- msg
 }
