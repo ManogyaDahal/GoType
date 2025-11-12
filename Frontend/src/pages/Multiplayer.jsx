@@ -7,7 +7,6 @@ export default function Multiplayer() {
   const [roomCode, setRoomCode] = useState("");
   const navigate = useNavigate();
 
-  // When user clicks "Join Room"
   const handleJoinRoom = () => {
     if (!roomCode.trim()) {
       alert("Please enter a valid room code.");
@@ -16,15 +15,27 @@ export default function Multiplayer() {
     navigate(`/lobby/${roomCode}`);
   };
 
-  // When user clicks "Create Room"
   const handleCreateRoom = async () => {
     try {
-      // Backend endpoint that creates new hub
       const res = await fetch("http://localhost:8080/api/create-room", {
-        credentials: "include",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // This is correct - keep it
       });
+
+      if (!res.ok) {
+        // CHANGED: Better error handling
+        if (res.status === 401) {
+          alert("Please login first");
+          navigate("/login");
+          return;
+        }
+        throw new Error("Failed to create room");
+      }
+
       const data = await res.json();
-      navigate(`/lobby/${data.roomId}`);
+      console.log("Room created:", data); // ADDED: Debug log
+      navigate(`/lobby/${data.room_id}`);
     } catch (err) {
       console.error("Error creating room:", err);
       alert("Failed to create room.");
