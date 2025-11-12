@@ -55,11 +55,6 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		//Retrieving the room Id and action from the url
 		roomId := c.Query("room_id")
 		action := Action(c.Query("action")) //converting into Action type
-		if roomId == "" && action != ActionCreate {
-			c.JSON(http.StatusBadRequest, 
-			gin.H{"error": "Missing room_id or invalid action"})
-			return
-		}
 
 		//Ensure correct action is selected and actions are performed
 		if !IsValidAction(action){
@@ -69,8 +64,6 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		}
 		var currentHub *Hub
 		switch action{
-		case ActionCreate:
-			currentHub = m.CreateNewHub()
 		case ActionJoin:
 			currentHub = m.GetExistringHub(roomId)
         	if currentHub == nil {
@@ -94,6 +87,7 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 			connection: conn,
 			send: make(chan []byte, 256),
 			name: name.(string),
+			ready: false,
 		}
 
 		// registering the client
@@ -101,5 +95,13 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 
 		go client.WritePump() //connection -> client
 		go client.ReadPump()  //client -> connection
+	}
+}
+
+func CreateNewRoom(m *HubManager) gin.HandlerFunc{
+	return  func (c *gin.Context){
+		hub := m.CreateNewHub()
+		c.JSON(http.StatusOK,
+		gin.H{ "room_id":hub.roomId})
 	}
 }

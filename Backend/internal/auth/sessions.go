@@ -20,6 +20,7 @@ func InitSesssion(router *gin.Engine){
 		MaxAge: 7*86400,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure: false,
 	})
 	
 	router.Use(sessions.Sessions("session", store))
