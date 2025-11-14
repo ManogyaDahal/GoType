@@ -23,11 +23,6 @@ var upgrader = &websocket.Upgrader{
 	},
 }
 
-var hub = NewHub()
-func Init(){
-	go hub.Run()
-}
-
 //Websocket handler which can be used by authenticated users.
 //api eg: ws://localhost:8080/ws?action=join&room_id=abcd1234
 //api eg: ws://localhost:8080/ws?action=create
@@ -35,7 +30,6 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 	//checking for valid websocket upgrade
 	return func(c *gin.Context){
 		if !websocket.IsWebSocketUpgrade(c.Request) {
-			hub.ErrorReport(nil, "handler", Info, "Expected websocket upgrade", nil)
 			c.JSON(http.StatusBadRequest, 
 			gin.H{"error":"Expected websocket upgrade"})
 			return
@@ -46,7 +40,6 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		name := session.Get("Name")
 		log.Println(name)
 		if name == nil || name == ""{
-			hub.ErrorReport(nil, "handler", Info, "The user is not currently logged in", nil)
 			c.JSON(http.StatusUnauthorized, 
 			gin.H {"error":"The user is not currently logged in"})
 			return
@@ -75,7 +68,7 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		//upgrading connection from http to websocket
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
-			hub.ErrorReport(nil, "handler", Error, "Upgrade failed", err)
+			log.Printf("[wshandler]: websocket upgrade failed")
 			c.AbortWithStatus(http.StatusBadRequest)
 			// Important: DO NOT call c.JSON() here.
 			// WebSocket handshake already writes headers, so just return
@@ -91,10 +84,11 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		}
 
 		// registering the client
+		log.Printf("[wsHandler]: Regestering the client")
 		client.hub.register <- client
 
-		go client.WritePump() //connection -> client
 		go client.ReadPump()  //client -> connection
+		go client.WritePump() //connection -> client
 	}
 }
 

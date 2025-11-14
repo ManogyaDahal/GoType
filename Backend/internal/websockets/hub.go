@@ -119,6 +119,7 @@ func (h *Hub)Run(){
 		case client := <-h.register:
 			h.clients[client] = true
 			h.BroadcastPlayerList()
+			log.Println("[Hub Run]: UserRegistered")
 			SendSystemMessages(UserJoinedSysMessage, client, h)
 
 		case client := <-h.unregistered:
@@ -126,19 +127,24 @@ func (h *Hub)Run(){
 				delete(h.clients, client)
 				close(client.send) //edit
 				h.BroadcastPlayerList()
+				log.Println("[Hub Run]: User UnRegistered")
 				SendSystemMessages(UserLeftSysMessage, client, h)
 			}
 			if len(h.clients) == 0 && h.hubManager != nil{
+				log.Println("[Hub Run]: Hub Deleated")
 				h.hubManager.DeleteHub(h.roomId)
 				return //edit
 			}
 
 		case msg := <-h.broadcast: 
+    	log.Printf("[Hub] 📨 Received message - Type: %s, Sender: %s", msg.Type, msg.Sender)
 			if err := ValidateMessage(&msg); err != nil {
 				log.Printf("[Hub] Message validation failed: %v", err)
 				continue
 			}
+    	log.Printf("[Hub] ✅ Message valid, routing to handler")
 			messageHandeling(msg, h)	
+    	log.Printf("[Hub] ✅ Message handled")
 
 		case errorEvent := <-h.errors:
 			//centralized logging

@@ -8,16 +8,17 @@ import (
 	"github.com/ManogyaDahal/GoType/internal/websockets"
 )
 
+var hubManager *websockets.HubManager
+
 func main(){
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Failed to load environment variables.", err)
 	}
 
-	// continously checks for the incoming request
-	hub := websockets.NewHub()
-	go hub.Run()
+	//creating single hub manager
+	hubManager = websockets.NewHubManager()
 
-	router := routes.SetupRouters()
+	router := routes.SetupRouters(hubManager)
 	router.Run(":8080")
 }

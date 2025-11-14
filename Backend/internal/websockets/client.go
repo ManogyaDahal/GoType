@@ -43,7 +43,10 @@ func (c *Clients) ReadPump() {
 	})
 
 	for {
+
+		log.Printf("[ReadPump]:Before")
 		_, data, err := c.connection.ReadMessage()
+		log.Printf("[ReadPump]:After")
 
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
@@ -63,15 +66,14 @@ func (c *Clients) ReadPump() {
 
 		var message Message
 		if err := json.Unmarshal(data, &message); err != nil {
+			log.Printf("[ReadPump]Got error in unmarshal")
 			c.hub.ErrorReport(c, "read", "error", "Error in json Unmarshal", err)
 			continue
 		}
 		message.Sender = c.name
 		message.RoomId = c.hub.roomId
 		message.TimeStamp = time.Now()
-		message.Type = BroadcastMessage
-
-		log.Printf("[ReadPump] 📤 Broadcasting message from %s to room %s", c.name, c.hub.roomId)
+    log.Printf("[ReadPump] 📤 Sending to broadcast channel - Type: %s", message.Type)
 		c.hub.broadcast <- message
 	}
 }

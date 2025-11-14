@@ -9,7 +9,7 @@ import (
 
 )    
 // Sets Up the routers and defines all the routes
-func SetupRouters() *gin.Engine{
+func SetupRouters(manager *websockets.HubManager) *gin.Engine{
 	router := gin.Default()
 
 	// CHANGED: Updated CORS to allow credentials properly
@@ -26,9 +26,6 @@ func SetupRouters() *gin.Engine{
 
 	// oauth setup
 	cfg := auth.InitOauth()
-
-	//hub manager
-	manager := websockets.NewHubManager()
 
 	// defining routes
 	router.GET("/", auth.HomeHandler)

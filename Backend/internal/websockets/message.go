@@ -70,6 +70,7 @@ func messageHandeling(message Message, h *Hub){
 				client.send <- encodeMessage(message)
 			}
 		case PlayerReadyToggle:
+			log.Printf("readytoggle recieved")
 			for client := range h.clients {
 				if client.name == message.Sender {
 					client.ready = !client.ready
