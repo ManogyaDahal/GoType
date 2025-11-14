@@ -7,6 +7,8 @@ export default function Multiplayer() {
   const [roomCode, setRoomCode] = useState("");
   const navigate = useNavigate();
 
+	//Need to work on this functions and design an api to check weather the 
+	//given room with room code exists or not
   const handleJoinRoom = () => {
     if (!roomCode.trim()) {
       alert("Please enter a valid room code.");

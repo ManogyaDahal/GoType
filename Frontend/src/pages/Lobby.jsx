@@ -5,159 +5,163 @@ import { Input } from "@/components/ui/input";
 
 export default function Lobby() {
   const { roomId } = useParams();
-  const [ws, setWs] = useState(null);
+  const navigate = useNavigate();
+  
+  const wsRef = useRef(null);
+  const chatEndRef = useRef(null);
+  
   const [players, setPlayers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
   const [isReady, setIsReady] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("Connecting..."); // ADDED: Show connection status
-  const chatEndRef = useRef(null);
-  const navigate = useNavigate();
+  const [connectionStatus, setConnectionStatus] = useState("connecting");
 
-  // ✅ Scroll chat to bottom when new message appears
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ✅ Connect to WebSocket on mount
+  // Connect to WebSocket once on mount
   useEffect(() => {
     const socket = new WebSocket(
-      "ws://localhost:8080/ws?action=join&room_id=" + roomId
+      `ws://localhost:8080/ws?action=join&room_id=${roomId}`
     );
-    setWs(socket);
+    wsRef.current = socket;
 
-    // CHANGED: Properly handle WebSocket connection
     socket.onopen = () => {
-      console.log("✅ WS Connected");
-      setConnectionStatus("Connected"); // ADDED: Update status
+      console.log("✅ Connected to room:", roomId);
+      setConnectionStatus("connected");
     };
 
-    // CHANGED: Parse and handle incoming messages properly
     socket.onmessage = (event) => {
-      console.log("📩 WS Message:", event.data);
+      console.log("📩 Raw message:", event.data);
       
       try {
         const data = JSON.parse(event.data);
-        console.log("Parsed message:", data);
-
-        // CHANGED: Handle different message types
+        console.log("📦 Parsed message:", data);
+        
         if (data.type === "player_list") {
-          // CHANGED: Parse the player list content
           const playerList = JSON.parse(data.content);
-          console.log("Player list updated:", playerList);
+          console.log("👥 Player list:", playerList);
           setPlayers(playerList);
         } else if (data.type === "broadcast") {
-          // CHANGED: Parse broadcast content and add to messages
           const content = JSON.parse(data.content);
-          setMessages((prev) => [
-            ...prev,
-            {
-              sender: data.sender,
-              content: content,
-              timestamp: data.timestamp,
-            },
-          ]);
+          console.log("💬 Chat message:", content, "from:", data.sender);
+          setMessages((prev) => [...prev, {
+            sender: data.sender,
+            content: content,
+            timestamp: data.timestamp,
+          }]);
         } else if (data.type === "string") {
-          // CHANGED: Handle system messages (note: your backend has "string" instead of "system")
           const content = JSON.parse(data.content);
-          setMessages((prev) => [
-            ...prev,
-            {
-              sender: "System",
-              content: content,
-              timestamp: data.timestamp,
-            },
-          ]);
+          console.log("📢 System message:", content);
+          setMessages((prev) => [...prev, {
+            sender: "System",
+            content: content,
+            timestamp: data.timestamp,
+          }]);
         }
       } catch (err) {
-        console.error("Error parsing message:", err);
+        console.error("❌ Parse error:", err, "Raw data:", event.data);
       }
     };
 
     socket.onerror = (err) => {
-      console.error("⚠️ WS Error:", err);
-      setConnectionStatus("Error"); // ADDED: Update status
+      console.error("⚠️ WebSocket error:", err);
+      setConnectionStatus("error");
     };
 
     socket.onclose = (e) => {
-      console.log("❌ WS Closed:", e.code, e.reason);
-      setConnectionStatus("Disconnected"); // ADDED: Update status
-      // ADDED: Optional - try to reconnect or show error to user
+      console.log("🔌 WebSocket closed:", e.code, e.reason);
+      setConnectionStatus("disconnected");
       if (e.code !== 1000) {
-        alert("Connection lost. Please try rejoining the room.");
+        alert("Connection lost. Please rejoin.");
       }
     };
 
-    // CHANGED: Cleanup function
     return () => {
+      console.log("🧹 Cleanup: Closing WebSocket");
       if (socket.readyState === WebSocket.OPEN) {
-        socket.close();
+        socket.close(1000, "Component unmount");
       }
     };
   }, [roomId]);
 
-  // ✅ Send chat message
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
   const sendMessage = () => {
-    if (!messageInput.trim() || !ws) return;
-    
-    // CHANGED: Check if WebSocket is open before sending
-    if (ws.readyState !== WebSocket.OPEN) {
-      console.error("WebSocket is not open. ReadyState:", ws.readyState);
-      alert("Connection not ready. Please wait or refresh.");
+		if (wsRef.current?.readyState !== WebSocket.OPEN) {
+  		console.warn("Cannot send — WebSocket not open yet!", wsRef.current?.readyState);
+  		return;
+		}
+    const content = messageInput.trim();
+    if (!content || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("⚠️ Cannot send message - invalid state");
       return;
     }
 
-    const msg = {
+    const payload = {
       type: "broadcast",
+      content: content,
       room_id: roomId,
-      content: JSON.stringify(messageInput), // CHANGED: Stringify the content
     };
+
+    console.log("📤 Sending message:", payload);
+    wsRef.current.send(JSON.stringify(payload));
     
-    console.log("Sending message:", msg);
-    ws.send(JSON.stringify(msg));
+    // Optimistic UI update
+    setMessages((prev) => [...prev, {
+      sender: "You",
+      content: content,
+      timestamp: new Date().toISOString(),
+    }]);
+    
     setMessageInput("");
   };
 
-  // CHANGED: Handle Enter key press in chat input
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
-      sendMessage();
-    }
-  };
-
-  // ✅ Toggle Ready state
   const toggleReady = () => {
-    const newReadyState = !isReady;
-    setIsReady(newReadyState);
-
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // CHANGED: Use the correct message type for ready toggle
-      const msg = {
-        type: "ready_toggle", // CHANGED: Match your backend constant PlayerReadyToggle
-        room_id: roomId,
-        content: JSON.stringify(newReadyState ? "ready" : "not ready"), // CHANGED: Stringify content
-      };
-      console.log("Toggling ready state:", msg);
-      ws.send(JSON.stringify(msg));
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("⚠️ Cannot toggle ready - not connected");
+      return;
     }
+    
+    const newState = !isReady;
+    setIsReady(newState);
+
+    const payload = {
+      type: "ready_toggle",
+      room_id: roomId,
+      content: newState ? "ready" : "not ready",
+    };
+
+    console.log("🎮 Toggling ready:", payload);
+    wsRef.current.send(JSON.stringify(payload));
   };
 
-  // ✅ Start Game (for now, just navigate)
+  const handleLeaveRoom = () => {
+    console.log("👋 Leaving room");
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.close(1000, "User left");
+    }
+    navigate("/");
+  };
+
   const startGame = () => {
+    console.log("🎮 Starting game");
     navigate(`/game/${roomId}`);
   };
+
+  const isConnected = connectionStatus === "connected";
+  const allReady = players.length > 0 && players.every(p => p.ready);
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <header className="p-4 flex justify-between items-center bg-white shadow">
         <div>
           <h1 className="text-2xl font-bold">Room: {roomId}</h1>
-          {/* ADDED: Show connection status */}
-          <span className={`text-sm ${connectionStatus === 'Connected' ? 'text-green-600' : 'text-red-600'}`}>
+          <span className={`text-sm ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
             {connectionStatus}
           </span>
         </div>
-        <Button onClick={() => navigate("/")}>Leave Room</Button>
+        <Button onClick={handleLeaveRoom}>Leave Room</Button>
       </header>
 
       <main className="flex flex-1 gap-6 p-6">
@@ -186,7 +190,7 @@ export default function Lobby() {
             onClick={toggleReady}
             variant={isReady ? "secondary" : "default"}
             className="mt-4 w-full"
-            disabled={connectionStatus !== "Connected"} // ADDED: Disable if not connected
+            disabled={!isConnected}
           >
             {isReady ? "Unready" : "Ready"}
           </Button>
@@ -198,9 +202,11 @@ export default function Lobby() {
             {messages.map((m, i) => (
               <div
                 key={i}
-                className={`p-2 rounded-md ${
+                className={`p-2 rounded-md max-w-xs ${
                   m.sender === "System"
-                    ? "text-gray-500 text-center"
+                    ? "text-gray-500 text-center mx-auto"
+                    : m.sender === "You"
+                    ? "bg-blue-100 ml-auto"
                     : "bg-gray-100"
                 }`}
               >
@@ -217,15 +223,15 @@ export default function Lobby() {
             <Input
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
-              onKeyPress={handleKeyPress} // ADDED: Handle Enter key
+              onKeyPress={(e) => e.key === "Enter" && sendMessage()}
               placeholder="Type a message..."
               className="flex-1"
-              disabled={connectionStatus !== "Connected"} // ADDED: Disable if not connected
+              disabled={!isConnected}
             />
             <Button 
               onClick={sendMessage} 
               className="ml-2"
-              disabled={connectionStatus !== "Connected"} // ADDED: Disable if not connected
+              disabled={!isConnected}
             >
               Send
             </Button>
@@ -236,7 +242,7 @@ export default function Lobby() {
       {/* Footer */}
       <footer className="p-4 bg-white shadow flex justify-center">
         <Button
-          disabled={!isReady || players.some((p) => !p.ready) || connectionStatus !== "Connected"}
+          disabled={!isReady || !allReady || !isConnected}
           onClick={startGame}
         >
           Start Game
