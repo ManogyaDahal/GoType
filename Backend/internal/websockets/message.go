@@ -50,6 +50,7 @@ func messageHandeling(message Message, h *Hub){
 		case BroadcastMessage:
 			//message broadcasting to all messages
 			for client := range h.clients{ 
+				if client.name == message.Sender { continue } //skip the broadcast to sender
 				client.send <- encodeMessage(message)
 			}
 		case PrivateMessage:

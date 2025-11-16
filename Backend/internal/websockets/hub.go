@@ -50,9 +50,9 @@ func NewHub() *Hub {
 	return &Hub{
 		roomId: GenerateRoomId(),
 		clients: make(map[*Clients]bool),
-		broadcast: make(chan Message),
-		register: make(chan *Clients),
-		unregistered: make(chan *Clients),
+		broadcast: make(chan Message, 100),
+		register: make(chan *Clients, 5),
+		unregistered: make(chan *Clients, 10),
 		errors : make(chan ErrorEvent, 100), //buffered channel to prevent blocking 
 	}
 }
@@ -118,6 +118,7 @@ func (h *Hub)Run(){
 		select { 
 		case client := <-h.register:
 			h.clients[client] = true
+			log.Println("[Hub Run]: UserRegistered...")
 			h.BroadcastPlayerList()
 			log.Println("[Hub Run]: UserRegistered")
 			SendSystemMessages(UserJoinedSysMessage, client, h)
@@ -185,26 +186,42 @@ func (h *Hub) ErrorReport(c *Clients, src string, sev Severity, msg string, err 
     }
 }
 
-func (h *Hub)BroadcastPlayerList(){
-	players := []map[string]interface{}{}
-	for client := range h.clients {
-		players = append(players, map[string]interface{}{
-			"name": client.name,
-			"ready": client.ready,
-		})
-	}
-	
-	data, err := json.Marshal(players)
-	if err != nil {
-		log.Printf("[Hub] failed to marshal player list: %v", err)
-		return
-	}
-	msg := Message{
-		Type: "player_list",
-		Content: data,
-		RoomId: h.roomId,
-		TimeStamp: time.Now(),
-	}
+func (h *Hub) BroadcastPlayerList() {
+    players := make([]map[string]interface{}, 0, len(h.clients))
+    for client := range h.clients {
+        players = append(players, map[string]interface{}{
+            "name":  client.name,
+            "ready": client.ready,
+        })
+    }
 
-	h.broadcast <- msg
+    // Step 1: Marshal players to []byte
+    data, err := json.Marshal(players)
+    if err != nil {
+        log.Printf("Failed to marshal player list")
+        return
+    }
+
+    // Step 2: Convert []byte to string
+    contentStr := string(data)  // ← CORRECT: string(data)
+
+    // Step 3: Marshal string to JSON (adds quotes + escapes)
+    contentJSON, err := json.Marshal(contentStr)
+    if err != nil {
+        log.Printf("Failed to marshal content string")
+        return
+    }
+
+    msg := Message{
+        Type:      "player_list",
+        Content:   json.RawMessage(contentJSON),
+        RoomId:    h.roomId,
+        TimeStamp: time.Now(),
+    }
+
+    select {
+    case h.broadcast <- msg:
+    default:
+        log.Printf("Broadcast channel full")
+    }
 }
