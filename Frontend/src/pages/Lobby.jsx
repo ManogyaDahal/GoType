@@ -28,38 +28,45 @@ export default function Lobby() {
       setConnectionStatus("connected");
     };
 
-    socket.onmessage = (event) => {
-      console.log("📩 Raw message:", event.data);
-      
-      try {
-        const data = JSON.parse(event.data);
-        console.log("📦 Parsed message:", data);
-        
-        if (data.type === "player_list") {
-          const playerList = JSON.parse(data.content);
-          console.log("👥 Player list:", playerList);
-          setPlayers(playerList);
-        } else if (data.type === "broadcast") {
-          const content = JSON.parse(data.content);
-          console.log("💬 Chat message:", content, "from:", data.sender);
-          setMessages((prev) => [...prev, {
-            sender: data.sender,
-            content: content,
-            timestamp: data.timestamp,
-          }]);
-        } else if (data.type === "string") {
-          const content = JSON.parse(data.content);
-          console.log("📢 System message:", content);
-          setMessages((prev) => [...prev, {
-            sender: "System",
-            content: content,
-            timestamp: data.timestamp,
-          }]);
-        }
-      } catch (err) {
-        console.error("❌ Parse error:", err, "Raw data:", event.data);
-      }
-    };
+socket.onmessage = (event) => {
+  let data;
+  try {
+    data = JSON.parse(event.data);
+  } catch (err) {
+    console.error("JSON parse failed:", err);
+    console.error("Raw (corrupted) data:", event.data); // ← Only log on error
+    return;
+  }
+
+  console.log("Valid message:", data); // ← Safe: after parsing
+
+if (data.type === "player_list") {
+  try {
+    const playerList = JSON.parse(data.content);
+    console.log("Updating players:", playerList);
+    setPlayers(playerList); // This triggers re-render
+  } catch (e) {
+    console.error("Invalid player_list JSON:", data.content);
+  }
+} else if (data.type === "broadcast") {
+    setMessages(prev => [...prev, {
+      sender: data.sender,
+      content: data.content,  // ← already string!
+      timestamp: data.timestamp,
+    }]);
+  } else if (data.type === "string") {
+    try {
+      const content = JSON.parse(data.content);
+      setMessages(prev => [...prev, {
+        sender: "System",
+        content,
+        timestamp: data.timestamp,
+      }]);
+    } catch (e) {
+      console.error("Failed to parse system message");
+    }
+  }
+};
 
     socket.onerror = (err) => {
       console.error("⚠️ WebSocket error:", err);
