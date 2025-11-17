@@ -3,8 +3,9 @@ package auth
 import (
 	"context"
 	"net/http"
-	"log"
 	"encoding/json"
+
+	"github.com/ManogyaDahal/GoType/internal/logger"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,6 @@ func LoginHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		//Loading and setting session state
 		session := sessions.Default(c)
 		state := GenerateState()
-		log.Printf("Generated state: %s\n",state)
 		session.Set("oauth_state", state)
 		session.Save()
 
@@ -39,8 +39,6 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		stateInSession := session.Get("oauth_state")
 		stateInUrl := c.Query("state")
 
-		log.Printf("stateInsession: %s\n",stateInSession)
-		log.Printf("stateInUrl: %s\n", stateInUrl)
 		// validating the state
 		if stateInSession != stateInUrl {
 			c.JSON(http.StatusBadRequest, 
@@ -90,11 +88,11 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		session.Set("Picture", userInfo.Picture)
 
 		if err := session.Save(); err != nil {
-			log.Printf("[SESSION] Failed to save: %v\n", err)
+			logger.Logger.Error("[SESSION] Failed to save: %v\n", 
+														"error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "session save failed"})
 			return
 		}
-		log.Println("[CALLBACK] Redirecting to home...")
 		c.Redirect(http.StatusFound, "http://localhost:5173/")
 	}
 }
@@ -108,7 +106,8 @@ func LogoutHandler(c *gin.Context)  {
 		Path:   "/", 
     })
     if err := session.Save(); err != nil {
-        log.Println("Failed to clear session:", err)
+        logger.Logger.Error("Failed to clear session:", 
+				"error", err)
     }
 	c.Redirect(http.StatusFound, "http://localhost:5173/")
 }

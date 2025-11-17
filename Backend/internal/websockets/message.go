@@ -3,7 +3,8 @@ package websockets
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+
+	"github.com/ManogyaDahal/GoType/internal/logger"
 	"strings"
 	"time"
 )
@@ -37,7 +38,8 @@ const (
 func encodeMessage(msg Message) []byte{
 	data, err := json.Marshal(msg)
     if err != nil {
-        log.Printf("[EncodeError] failed to encode message: %v", err)
+        logger.Logger.Error("[EncodeError] failed to encode message: %v", 
+														"error", err)
         return []byte(`{"type":"error","content":"Internal server error"}`)
     }
 	return data
@@ -71,7 +73,7 @@ func messageHandeling(message Message, h *Hub){
 				client.send <- encodeMessage(message)
 			}
 		case PlayerReadyToggle:
-			log.Printf("readytoggle recieved")
+			logger.Logger.Info("readytoggle recieved")
 			for client := range h.clients {
 				if client.name == message.Sender {
 					client.ready = !client.ready

@@ -1,8 +1,9 @@
 package websockets
 
 import (
-	"log"
 	"net/http"
+
+	"github.com/ManogyaDahal/GoType/internal/logger"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -18,7 +19,8 @@ var upgrader = &websocket.Upgrader{
 		if origin == "http://localhost:5173" || origin == "http://localhost:8080" {
 		return true 
 		}
-		log.Printf("[WS] Blocked connection from unauthorized origin: %s\n", origin)
+		logger.Logger.Error("[WS] Blocked connection from unauthorized",
+													"origin" ,origin)
 		return false
 	},
 }
@@ -38,7 +40,6 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		// fetching user email to check if user is looged in
 		session := sessions.Default(c)
 		name := session.Get("Name")
-		log.Println(name)
 		if name == nil || name == ""{
 			c.JSON(http.StatusUnauthorized, 
 			gin.H {"error":"The user is not currently logged in"})
@@ -68,7 +69,7 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		//upgrading connection from http to websocket
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
-			log.Printf("[wshandler]: websocket upgrade failed")
+			logger.Logger.Error("[wshandler]: websocket upgrade failed")
 			c.AbortWithStatus(http.StatusBadRequest)
 			// Important: DO NOT call c.JSON() here.
 			// WebSocket handshake already writes headers, so just return
@@ -84,7 +85,6 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		}
 
 		// registering the client
-		log.Printf("[wsHandler]: Regestering the client")
 		client.hub.register <- client
 
 		go client.ReadPump()  //client -> connection

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net"
 	"time"
-	"log"
 
+	"github.com/ManogyaDahal/GoType/internal/logger"
 	"github.com/gorilla/websocket"
 )
 
@@ -27,9 +27,11 @@ const (
 //Reads the message from client and
 //Broadcasts it to the hub's broadcast channel (input ie. client->server)
 func (c *Clients) ReadPump() {
-	log.Printf("[ReadPump] ▶ Started for user: %s", c.name)
+	logger.Logger.Info("[ReadPump]: Starting connection",
+											"user", c.name)
 	defer func() {
-		log.Printf("[ReadPump] Closing connection for user: %s", c.name)
+	logger.Logger.Warn("[ReadPump]: Closing connection",
+											"user", c.name)
 		c.hub.unregistered <- c
 		c.connection.Close()
 	}()
@@ -37,43 +39,38 @@ func (c *Clients) ReadPump() {
 	c.connection.SetReadLimit(4096) //4kb
 	_ = c.connection.SetReadDeadline(time.Now().Add(pongWait))
 	c.connection.SetPongHandler(func(string) error {
-		log.Printf("[ReadPump] Pong received from %s", c.name)
+		logger.Logger.Info("[ReadPump] Pong received from %s", c.name)
 		_ = c.connection.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 
 	for {
-
-		log.Printf("[ReadPump]:Before")
 		_, data, err := c.connection.ReadMessage()
-		log.Printf("[ReadPump]:After")
 
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				c.hub.ErrorReport(c, "read", Error, "unexpected close", err)
+				c.hub.EventReport(c, "read", Error, "unexpected close", err)
 			} else if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				c.hub.ErrorReport(c, "read", Error, "normal closure", err)
+				c.hub.EventReport(c, "read", Error, "normal closure", err)
 			} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				c.hub.ErrorReport(c, "read", Error, "client timeout", err)
+				c.hub.EventReport(c, "read", Error, "client timeout", err)
 			} else {
-				c.hub.ErrorReport(c, "read", Error, "read error", err)
+				c.hub.EventReport(c, "read", Error, "read error", err)
 			}
-			log.Printf("[ReadPump]  Read loop breaking for user: %s | err: %v", c.name, err)
+			logger.Logger.Warn("[ReadPump]  Read loop breaking for user: %s | err: %v", c.name, err)
 			break
 		}
 
-		log.Printf("[ReadPump] Message received from %s: %s", c.name, string(data))
-
 		var message Message
 		if err := json.Unmarshal(data, &message); err != nil {
-			log.Printf("[ReadPump]Got error in unmarshal")
-			c.hub.ErrorReport(c, "read", "error", "Error in json Unmarshal", err)
+			logger.Logger.Error("[ReadPump]Got error in unmarshal", "error", err)
+			c.hub.EventReport(c, "read", "error", "Error in json Unmarshal", err)
 			continue
 		}
 		message.Sender = c.name
 		message.RoomId = c.hub.roomId
 		message.TimeStamp = time.Now()
-    log.Printf("[ReadPump] 📤 Sending to broadcast channel - Type: %s", message.Type)
+    logger.Logger.Info("[ReadPump] Sending to broadcast channel - Type: %s", message.Type)
 		c.hub.broadcast <- message
 	}
 }
@@ -81,12 +78,12 @@ func (c *Clients) ReadPump() {
 // continously sends the message from the `send` channel to websocket.
 // (ie. output: server ->client )
 func (c *Clients) WritePump() {
-	log.Printf("[WritePump] ▶ Started for user: %s", c.name)
+	logger.Logger.Info("[WritePump] ▶ Started for user: %s", c.name)
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
 		c.connection.Close()
-		log.Printf("[WritePump] Closing connection for user: %s", c.name)
+		logger.Logger.Warn("[WritePump] Closing connection for user: %s", c.name)
 	}()
 
 	for {
@@ -95,22 +92,22 @@ func (c *Clients) WritePump() {
 			_ = c.connection.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				_ = c.connection.WriteMessage(websocket.CloseMessage, []byte{})
-				c.hub.ErrorReport(c, "write", Warning, "send channel closed by hub", nil)
-				log.Printf("[WritePump] Send channel closed for user: %s", c.name)
+				c.hub.EventReport(c, "write", Warning, "send channel closed by hub", nil)
+				logger.Logger.Warn("[WritePump] Send channel closed for user: %s", c.name)
 				return
 			}
 
 			w, err := c.connection.NextWriter(websocket.TextMessage)
 			if err != nil {
-				c.hub.ErrorReport(c, "write", Error, "write setup error", err)
-				log.Printf("[WritePump] Write setup error for user: %s | err: %v", c.name, err)
+				c.hub.EventReport(c, "write", Error, "write setup error", err)
+				logger.Logger.Error("[WritePump] Write setup error for user: %s | err: %v", c.name, err)
 				return
 			}
 
-			log.Printf("[WritePump] 📨 Sending message to %s: %s", c.name, string(message))
+			logger.Logger.Info("[WritePump]: Sending message to %s: %s", c.name, string(message))
 			if _, err := w.Write(message); err != nil {
-				c.hub.ErrorReport(c, "write", Error, "write error", err)
-				log.Printf("[WritePump] Write error for user: %s | err: %v", c.name, err)
+				c.hub.EventReport(c, "write", Error, "write error", err)
+				logger.Logger.Error("[WritePump] Write error for user: %s | err: %v", c.name, err)
 				_ = w.Close()
 				return
 			}
@@ -119,30 +116,30 @@ func (c *Clients) WritePump() {
 			for i := 0; i < n; i++ {
 				nextMsg := <-c.send
 				if _, err := w.Write(nextMsg); err != nil {
-					c.hub.ErrorReport(c, "write", Error, "message queue write failed", err)
-					log.Printf("[WritePump] Message queue write failed for user: %s | err: %v", c.name, err)
+					c.hub.EventReport(c, "write", Error, "message queue write failed", err)
+					logger.Logger.Error("[WritePump] Message queue write failed for user: %s | err: %v", c.name, err)
 					break
 				}
 			}
 
 			if err := w.Close(); err != nil {
-				c.hub.ErrorReport(c, "write", Error, "writer close error", err)
-				log.Printf("[WritePump] Writer close error for user: %s | err: %v", c.name, err)
+				c.hub.EventReport(c, "write", Error, "writer close error", err)
+				logger.Logger.Error("[WritePump] Writer close error for user: %s | err: %v", c.name, err)
 				return
 			}
 
 		case <-ticker.C:
 			_ = c.connection.SetWriteDeadline(time.Now().Add(writeWait))
-			log.Printf("[WritePump] Sending ping to user: %s", c.name)
+			logger.Logger.Info("[WritePump] Sending ping to user: %s", c.name)
 			if err := c.connection.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
 				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					c.hub.ErrorReport(c, "write", Error, "ping failed, connection lost", err)
+					c.hub.EventReport(c, "write", Error, "ping failed, connection lost", err)
 				} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
-					c.hub.ErrorReport(c, "write", Error, "Ping timeout", err)
+					c.hub.EventReport(c, "write", Error, "Ping timeout", err)
 				} else {
-					c.hub.ErrorReport(c, "write", Error, "write pump error", err)
+					c.hub.EventReport(c, "write", Error, "write pump error", err)
 				}
-				log.Printf("[WritePump] Ping failed for user: %s | err: %v", c.name, err)
+				logger.Logger.Error("[WritePump] Ping failed for user: %s | err: %v", c.name, err)
 				return
 			}
 		}
