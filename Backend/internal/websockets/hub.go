@@ -6,9 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/ManogyaDahal/GoType/internal/logger"
 )
 
 //Manages all hubs
@@ -31,9 +32,6 @@ type Hub struct{
 	register     chan *Clients
 	unregistered chan *Clients
 
-	//Error management
-	errors chan ErrorEvent
-
 	//Hub manager
 	hubManager  *HubManager
 }
@@ -50,10 +48,9 @@ func NewHub() *Hub {
 	return &Hub{
 		roomId: GenerateRoomId(),
 		clients: make(map[*Clients]bool),
-		broadcast: make(chan Message, 100),
+		broadcast: make(chan Message, 100), //buffered channel to prevent deadlock
 		register: make(chan *Clients, 5),
 		unregistered: make(chan *Clients, 10),
-		errors : make(chan ErrorEvent, 100), //buffered channel to prevent blocking 
 	}
 }
 
@@ -81,6 +78,7 @@ func (m *HubManager) GetExistringHub(roomID string) *Hub{
 	m.mu.RLock() // for read lock
 	defer m.mu.RUnlock()
 	if hub, exists := m.hubs[roomID]; exists{
+		logger.Logger.Info("[Hub Manager]: Found the requested hub", "roomId", roomID)
 		return hub	
 	}  
 	return nil
@@ -92,14 +90,14 @@ func (m *HubManager) CreateNewHub() *Hub {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-
-	log.Printf("[HubManager]: Is making new Hub")
 	newHub := NewHub()
 	newHub.roomId = m.CheckIfRoomAlreadyExists(newHub.roomId)
 	// CHANGED: Set hubManager reference so hub can delete itself when empty
 	newHub.hubManager = m
 	m.hubs[newHub.roomId] = newHub
 	go newHub.Run()
+
+	logger.Logger.Info("[Hub Manager]: Created new hub", "roomId", newHub.roomId)
 	return newHub
 }
 
@@ -108,7 +106,7 @@ func (m *HubManager) DeleteHub(roomId string){
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.hubs, roomId)
-	log.Printf("Removed the hub with the ID: %s", roomId)
+	logger.Logger.Info("[Hub Manager]: successuflly deleated hub", "roomId", roomId)
 }
 
 //Run is the main event loop 
@@ -118,71 +116,79 @@ func (h *Hub)Run(){
 		select { 
 		case client := <-h.register:
 			h.clients[client] = true
-			log.Println("[Hub Run]: UserRegistered...")
 			h.BroadcastPlayerList()
-			log.Println("[Hub Run]: UserRegistered")
-			SendSystemMessages(UserJoinedSysMessage, client, h)
+			h.EventReport(client, "[hub]", Info, "NewClient registered", nil)
+			// SendSystemMessages(UserJoinedSysMessage, client, h)
 
 		case client := <-h.unregistered:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send) //edit
 				h.BroadcastPlayerList()
-				log.Println("[Hub Run]: User UnRegistered")
-				SendSystemMessages(UserLeftSysMessage, client, h)
+				h.EventReport(client, "[hub]", Warning, "Client Unregistered", nil)
+				// SendSystemMessages(UserLeftSysMessage, client, h)
 			}
 			if len(h.clients) == 0 && h.hubManager != nil{
-				log.Println("[Hub Run]: Hub Deleated")
+				logger.Logger.Info("[Hub Manager]: Deleting hub due to no people in hub",
+														 "roomId", h.roomId)
 				h.hubManager.DeleteHub(h.roomId)
-				return //edit
+				return 
 			}
 
 		case msg := <-h.broadcast: 
-    	log.Printf("[Hub] 📨 Received message - Type: %s, Sender: %s", msg.Type, msg.Sender)
+			logger.Logger.Info("Message received",
+        "room_id", h.roomId,
+        "type", string(msg.Type),
+        "sender", msg.Sender,
+        "content_preview", string(msg.Content)[:min(50, len(msg.Content))],
+    	)
 			if err := ValidateMessage(&msg); err != nil {
-				log.Printf("[Hub] Message validation failed: %v", err)
+				logger.Logger.Warn("Message validation failed",
+          "room_id", h.roomId,
+          "sender", msg.Sender,
+          "error", err,
+        )
 				continue
 			}
-    	log.Printf("[Hub] ✅ Message valid, routing to handler")
 			messageHandeling(msg, h)	
-    	log.Printf("[Hub] ✅ Message handled")
-
-		case errorEvent := <-h.errors:
-			//centralized logging
-			log.Printf("[%s] [%s] [client: %s] %s: %v\n", 
-			errorEvent.Time.Format("15:04:05"),
-			errorEvent.Source, 
-			errorEvent.Client,
-			errorEvent.Message,
-			errorEvent.Error,
-			)
-
-			// can use switch for various severity [info], [warning]
-			if errorEvent.Severity == "fatal"{
-				//do something
-			}
+			logger.Logger.Info("[Hub]: Message handeled successfully")
 		}
 	}
 }
 
 //For error reports
-func (h *Hub) ErrorReport(c *Clients, src string, sev Severity, msg string, err error) {
-		clientName := "unknown"
-		if c != nil {
-			clientName = c.name
-		}
+func (h *Hub) EventReport(c *Clients, src string, sev Severity, msg string, err error) {
+    clientName := "unknown"
+    if c != nil && c.name != "" {
+        clientName = c.name
+    }
 
-    select {
-    case h.errors <- ErrorEvent{
-        Time:      time.Now(),
-        Client:    clientName,
-        Source:    src,
-        Severity:  sev,
-        Message:   msg,
-        Error:     err,
-    }:
-    default:
-        log.Println("[Hub] Dropped error event (channel full)")
+    switch sev {
+    case Info:
+        logger.Logger.Info(msg,
+            "room_id", h.roomId,
+            "client", clientName,
+            "source", src,
+            "error", err,
+        )
+    case Warning:
+        logger.Logger.Warn(msg,
+            "room_id", h.roomId,
+            "client", clientName,
+            "source", src,
+            "error", err,
+        )
+    case Error, Fatal:
+        logger.Logger.Error(msg,
+            "room_id", h.roomId,
+            "client", clientName,
+            "source", src,
+            "error", err,
+        )
+
+        if sev == Fatal {
+					//do something
+        }
     }
 }
 
@@ -198,7 +204,7 @@ func (h *Hub) BroadcastPlayerList() {
     // Step 1: Marshal players to []byte
     data, err := json.Marshal(players)
     if err != nil {
-        log.Printf("Failed to marshal player list")
+				logger.Logger.Warn("[Hub]: Failed to marshal player list")
         return
     }
 
@@ -208,7 +214,7 @@ func (h *Hub) BroadcastPlayerList() {
     // Step 3: Marshal string to JSON (adds quotes + escapes)
     contentJSON, err := json.Marshal(contentStr)
     if err != nil {
-        log.Printf("Failed to marshal content string")
+				logger.Logger.Warn("[Hub]: Failed to marshal content string")
         return
     }
 
@@ -222,6 +228,6 @@ func (h *Hub) BroadcastPlayerList() {
     select {
     case h.broadcast <- msg:
     default:
-        log.Printf("Broadcast channel full")
+				logger.Logger.Warn("[Hub]: Broadcast channel full")
     }
 }
