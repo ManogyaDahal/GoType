@@ -1,27 +1,38 @@
 package routes
 
 import (
+	"os"
 	"time"
-	"github.com/ManogyaDahal/GoType/internal/websockets"
-	"github.com/ManogyaDahal/GoType/internal/auth"
-	"github.com/gin-gonic/gin"
-	"github.com/gin-contrib/cors"
 
-)    
+	"github.com/ManogyaDahal/GoType/internal/auth"
+	"github.com/ManogyaDahal/GoType/internal/websockets"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+)
+
 // Sets Up the routers and defines all the routes
-func SetupRouters(manager *websockets.HubManager) *gin.Engine{
+func SetupRouters(manager *websockets.HubManager) *gin.Engine {
+	if os.Getenv("ENV") == "production" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	router := gin.Default()
 
-	// CHANGED: Updated CORS to allow credentials properly
-    router.Use(cors.New(cors.Config{
-        AllowOrigins:     []string{"http://localhost:5173"},
-        AllowMethods:     []string{"GET", "POST", "OPTIONS"},
-        AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Cookie"}, // ADDED: Cookie header
-        ExposeHeaders:    []string{"Content-Length", "Set-Cookie"}, // ADDED: Set-Cookie header
-        AllowCredentials: true, // This is crucial for sessions
-        MaxAge: 12 * time.Hour,
-    }))
-	//Initialize session middleware
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:5173"
+	}
+
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{frontendURL},
+		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Cookie"},
+		ExposeHeaders:    []string{"Content-Length", "Set-Cookie"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	// Initialize session middleware
 	auth.InitSesssion(router)
 
 	// oauth setup

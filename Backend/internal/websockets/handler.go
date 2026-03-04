@@ -2,6 +2,7 @@ package websockets
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/ManogyaDahal/GoType/internal/logger"
 
@@ -10,39 +11,54 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func getAllowedOrigins() []string {
+	frontendURL := os.Getenv("FRONTEND_URL")
+	backendURL := os.Getenv("BACKEND_URL")
+
+	origins := []string{}
+	if frontendURL != "" {
+		origins = append(origins, frontendURL)
+	} else {
+		origins = append(origins, "http://localhost:5173")
+	}
+	if backendURL != "" {
+		origins = append(origins, backendURL)
+	} else {
+		origins = append(origins, "http://localhost:8080")
+	}
+	return origins
+}
 
 var upgrader = &websocket.Upgrader{
-	// Make origins stronglater
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
-		//add frontend or prod domain here
-		if origin == "http://localhost:5173" || origin == "http://localhost:8080" {
-		return true
+		for _, allowed := range getAllowedOrigins() {
+			if origin == allowed {
+				return true
+			}
 		}
 		logger.Logger.Error("[WS] Blocked connection from unauthorized",
-													"origin" ,origin)
+			"origin", origin)
 		return false
 	},
 }
 
-//Websocket handler which can be used by authenticated users.
-//api eg: ws://localhost:8080/ws?action=join&room_id=abcd1234
-//api eg: ws://localhost:8080/ws?action=create
+// Websocket handler which can be used by authenticated users.
 func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 	//checking for valid websocket upgrade
-	return func(c *gin.Context){
+	return func(c *gin.Context) {
 		if !websocket.IsWebSocketUpgrade(c.Request) {
 			c.JSON(http.StatusBadRequest,
-			gin.H{"error":"Expected websocket upgrade"})
+				gin.H{"error": "Expected websocket upgrade"})
 			return
 		}
 
-		// fetching user email to check if user is looged in
+		// fetching user email to check if user is logged in
 		session := sessions.Default(c)
 		name := session.Get("Name")
-		if name == nil || name == ""{
+		if name == nil || name == "" {
 			c.JSON(http.StatusUnauthorized,
-			gin.H {"error":"The user is not currently logged in"})
+				gin.H{"error": "The user is not currently logged in"})
 			return
 		}
 
@@ -51,19 +67,19 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		action := Action(c.Query("action")) //converting into Action type
 
 		//Ensure correct action is selected and actions are performed
-		if !IsValidAction(action){
+		if !IsValidAction(action) {
 			c.JSON(http.StatusBadRequest,
-			gin.H{"error":"Invlaid Action in the url"})
+				gin.H{"error": "Invalid Action in the url"})
 			return
 		}
 		var currentHub *Hub
-		switch action{
+		switch action {
 		case ActionJoin:
 			currentHub = m.GetExistringHub(roomId)
-        	if currentHub == nil {
-            	c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
-            	return
-        	}
+			if currentHub == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
+				return
+			}
 		}
 
 		//upgrading connection from http to websocket
@@ -77,11 +93,11 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 		}
 
 		client := &Clients{
-			hub: currentHub,
+			hub:        currentHub,
 			connection: conn,
-			send: make(chan []byte, 256),
-			name: name.(string),
-			status: StatusIdle,
+			send:       make(chan []byte, 256),
+			name:       name.(string),
+			status:     StatusIdle,
 		}
 
 		// registering the client
@@ -92,10 +108,10 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 	}
 }
 
-func CreateNewRoom(m *HubManager) gin.HandlerFunc{
-	return  func (c *gin.Context){
+func CreateNewRoom(m *HubManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		hub := m.CreateNewHub()
 		c.JSON(http.StatusOK,
-		gin.H{ "room_id":hub.roomId})
+			gin.H{"room_id": hub.roomId})
 	}
 }

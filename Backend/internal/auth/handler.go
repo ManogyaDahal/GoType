@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"net/http"
 	"encoding/json"
+	"net/http"
+	"os"
 
 	"github.com/ManogyaDahal/GoType/internal/logger"
 
@@ -12,14 +13,23 @@ import (
 	"golang.org/x/oauth2"
 )
 
-//Handler the Home route
+// frontendURL returns the configured frontend origin, defaulting to localhost for dev.
+func frontendURL() string {
+	u := os.Getenv("FRONTEND_URL")
+	if u == "" {
+		return "http://localhost:5173"
+	}
+	return u
+}
+
+// Handler the Home route
 func HomeHandler(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message":"Welcome to goType"})
+	c.JSON(http.StatusOK, gin.H{"message": "Welcome to goType"})
 }
 
 // handles the /login route
-func LoginHandler( cfg *oauth2.Config) gin.HandlerFunc {
-	return func(c *gin.Context){
+func LoginHandler(cfg *oauth2.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		//Loading and setting session state
 		session := sessions.Default(c)
 		state := GenerateState()
@@ -32,9 +42,9 @@ func LoginHandler( cfg *oauth2.Config) gin.HandlerFunc {
 	}
 }
 
-//Callback Handler handles
-func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
-	return func(c *gin.Context){
+// Callback Handler handles
+func CallbackHandler(cfg *oauth2.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		session := sessions.Default(c)
 		stateInSession := session.Get("oauth_state")
 		stateInUrl := c.Query("state")
@@ -42,43 +52,43 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		// validating the state
 		if stateInSession != stateInUrl {
 			c.JSON(http.StatusBadRequest,
-				   gin.H{ "error": "Invalid Oauth state"})
+				gin.H{"error": "Invalid Oauth state"})
 			return
 		}
 
 		code := c.Query("code")
-		if code == ""{
-			c.JSON(http.StatusBadRequest, gin.H{"error":"got empty code"})
+		if code == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "got empty code"})
 			return
 		}
 
 		tok, err := cfg.Exchange(context.Background(), code)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError,
-			gin.H{"error": "Error while exchanging tokens"})
+				gin.H{"error": "Error while exchanging tokens"})
 			return
 		}
 
 		client := cfg.Client(context.Background(), tok)
 		resp, err := client.Get(UserInfo)
 		if err != nil {
-    		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user info"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user info"})
 			return
 		}
 		defer resp.Body.Close()
 
 		var userInfo struct {
-    		ID            string `json:"id"`
-    		Email         string `json:"email"`
-    		VerifiedEmail bool   `json:"verified_email"`
-    		Name          string `json:"name"`
-    		GivenName     string `json:"given_name"`
-    		FamilyName    string `json:"family_name"`
-    		Picture       string `json:"picture"`
-}
+			ID            string `json:"id"`
+			Email         string `json:"email"`
+			VerifiedEmail bool   `json:"verified_email"`
+			Name          string `json:"name"`
+			GivenName     string `json:"given_name"`
+			FamilyName    string `json:"family_name"`
+			Picture       string `json:"picture"`
+		}
 		if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-    		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user info"})
-    		return
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user info"})
+			return
 		}
 
 		// setting values in session
@@ -93,34 +103,34 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "session save failed"})
 			return
 		}
-		c.Redirect(http.StatusFound, "http://localhost:5173/")
+		c.Redirect(http.StatusFound, frontendURL()+"/")
 	}
 }
 
 // handles the /logout route
-func LogoutHandler(c *gin.Context)  {
+func LogoutHandler(c *gin.Context) {
 	session := sessions.Default(c)
 	session.Clear()
-    session.Options(sessions.Options{
-        MaxAge: -1,
+	session.Options(sessions.Options{
+		MaxAge: -1,
 		Path:   "/",
-    })
-    if err := session.Save(); err != nil {
-        logger.Logger.Error("[SESSION] Failed to clear session",
-            "error", err)
-    }
-	c.Redirect(http.StatusFound, "http://localhost:5173/")
+	})
+	if err := session.Save(); err != nil {
+		logger.Logger.Error("[SESSION] Failed to clear session",
+			"error", err)
+	}
+	c.Redirect(http.StatusFound, frontendURL()+"/")
 }
 
 // handler Returns the current user
-func WhoAmI(c *gin.Context){
+func WhoAmI(c *gin.Context) {
 	session := sessions.Default(c)
 	name := session.Get("Name")
 
-    if name == nil {
-        c.JSON(http.StatusUnauthorized, gin.H{"error": "User not logged In"})
-        return
-    }
+	if name == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not logged In"})
+		return
+	}
 
-    c.JSON(http.StatusOK, gin.H{"name": name})
+	c.JSON(http.StatusOK, gin.H{"name": name})
 }

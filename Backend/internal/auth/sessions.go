@@ -1,8 +1,8 @@
 package auth
 
 import (
-	"encoding/base64"
 	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"os"
 
@@ -11,18 +11,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-
-func InitSesssion(router *gin.Engine){
+func InitSesssion(router *gin.Engine) {
 	secretKey := os.Getenv("SESSION_SECRET")
 	store := cookie.NewStore([]byte(secretKey))
-	store.Options( sessions.Options{
-		Path: "/", 
-		MaxAge: 7*86400,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure: false,
-	})
-	
+
+	env := os.Getenv("ENV")
+	if env == "production" {
+		store.Options(sessions.Options{
+			Path:     "/",
+			MaxAge:   7 * 86400,
+			HttpOnly: true,
+			SameSite: http.SameSiteNoneMode,
+			Secure:   true,
+		})
+	} else {
+		store.Options(sessions.Options{
+			Path:     "/",
+			MaxAge:   7 * 86400,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Secure:   false,
+		})
+	}
+
 	router.Use(sessions.Sessions("session", store))
 }
 
@@ -30,5 +41,5 @@ func InitSesssion(router *gin.Engine){
 func GenerateState() string {
 	data := make([]byte, 16)
 	rand.Read(data)
- 	return base64.URLEncoding.EncodeToString(data)
+	return base64.URLEncoding.EncodeToString(data)
 }

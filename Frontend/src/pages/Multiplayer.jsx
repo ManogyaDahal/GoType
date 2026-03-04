@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchUser } from "../lib/api";
+import { API_URL } from "../lib/config";
 
 export default function Multiplayer() {
   const [roomCode, setRoomCode] = useState("");
@@ -35,7 +36,7 @@ export default function Multiplayer() {
 
   const handleCreateRoom = async () => {
     try {
-      const res = await fetch("http://localhost:8080/api/create-room", {
+      const res = await fetch(`${API_URL}/api/create-room`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

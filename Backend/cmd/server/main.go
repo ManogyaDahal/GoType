@@ -11,16 +11,22 @@ import (
 
 var hubManager *websockets.HubManager
 
-func main(){
+func main() {
 	_ = godotenv.Load()
-	
-	//Initializing the logger
-	logger.InitLogger(os.Getenv("ENV"))
-	logger.Logger.Info("Server starting", "port", 8080, "env", os.Getenv("ENV"))
 
-	//creating single hub manager
+	// Initializing the logger
+	logger.InitLogger(os.Getenv("ENV"))
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	logger.Logger.Info("Server starting", "port", port, "env", os.Getenv("ENV"))
+
+	// creating single hub manager
 	hubManager = websockets.NewHubManager()
 
 	router := routes.SetupRouters(hubManager)
-	router.Run(":8080")
+	router.Run(":" + port)
 }

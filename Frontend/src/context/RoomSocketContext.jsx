@@ -8,6 +8,7 @@ import {
   useMemo,
 } from "react";
 import { useParams } from "react-router-dom";
+import { WS_URL } from "@/lib/config";
 
 const RoomSocketContext = createContext(null);
 
@@ -69,9 +70,7 @@ export function RoomSocketProvider({ children }) {
 
     setConnectionStatus("connecting");
 
-    const socket = new WebSocket(
-      `ws://localhost:8080/ws?action=join&room_id=${roomId}`,
-    );
+    const socket = new WebSocket(`${WS_URL}/ws?action=join&room_id=${roomId}`);
     wsRef.current = socket;
 
     socket.onopen = () => {
