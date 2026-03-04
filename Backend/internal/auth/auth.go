@@ -7,18 +7,23 @@ import (
 )
 
 //defines scopes
-var ScopeEmail string =  "https://www.googleapis.com/auth/userinfo.email" 
+var ScopeEmail string =  "https://www.googleapis.com/auth/userinfo.email"
 var ScopeProfile string = "https://www.googleapis.com/auth/userinfo.profile"
-//From where it fetches data 
-var UserInfo string  = "https://www.googleapis.com/oauth2/v2/userinfo" 
+//From where it fetches data
+var UserInfo string  = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 // returns the Initialized oauth configuration
 func InitOauth() *oauth2.Config {
-	return &oauth2.Config{ 
-		ClientID: os.Getenv("GOOGLE_CLIENT_ID"),	
+	backendURL := os.Getenv("BACKEND_URL")
+	if backendURL == "" {
+		backendURL = "http://localhost:8080"
+	}
+
+	return &oauth2.Config{
+		ClientID: os.Getenv("GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		Endpoint: google.Endpoint,
-		RedirectURL: "http://localhost:8080/auth/google/callback" ,
+		RedirectURL: backendURL + "/auth/google/callback",
 		Scopes: []string{ ScopeEmail, ScopeProfile},
 	}
 }
