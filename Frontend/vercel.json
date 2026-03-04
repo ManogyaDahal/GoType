@@ -1,0 +1,24 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://gotype-595o.onrender.com/api/:path*"
+    },
+    {
+      "source": "/login",
+      "destination": "https://gotype-595o.onrender.com/login"
+    },
+    {
+      "source": "/logout",
+      "destination": "https://gotype-595o.onrender.com/logout"
+    },
+    {
+      "source": "/auth/:path*",
+      "destination": "https://gotype-595o.onrender.com/auth/:path*"
+    },
+    {
+      "source": "/ws",
+      "destination": "https://gotype-595o.onrender.com/ws"
+    }
+  ]
+}
