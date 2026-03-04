@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 
 	"github.com/ManogyaDahal/GoType/internal/logger"
@@ -13,10 +12,7 @@ import (
 var hubManager *websockets.HubManager
 
 func main(){
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Failed to load environment variables.", err)
-	}
+	_ = godotenv.Load()
 	
 	//Initializing the logger
 	logger.InitLogger(os.Getenv("ENV"))
