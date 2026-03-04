@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { fetchUser } from "../lib/api";
 import { useNavigate } from "react-router-dom";
+import { API_URL } from "@/lib/config";
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -13,11 +14,11 @@ export default function Home() {
   }, []);
 
   const handleLogin = () => {
-    window.location.href = "http://localhost:8080/login"; // Go OAuth
+    window.location.href = `${API_URL}/login`;
   };
 
   const handleLogout = () => {
-    window.location.href = "http://localhost:8080/logout";
+    window.location.href = `${API_URL}/logout`;
   };
 
   const handleMultiplayerClick = () => {

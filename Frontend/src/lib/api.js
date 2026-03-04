@@ -1,6 +1,8 @@
+import { API_URL } from "./config";
+
 export async function fetchUser() {
   try {
-    const res = await fetch("http://localhost:8080/api/whoamI", {
+    const res = await fetch(`${API_URL}/api/whoamI`, {
       credentials: "include", // send session cookie
     });
 
