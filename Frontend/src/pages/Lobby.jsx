@@ -1,170 +1,219 @@
-import { useEffect, useState, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useRoomSocket } from "../context/RoomSocketContext";
+import { generateTextSeeded } from "../lib/gameLogic";
 
 export default function Lobby() {
-  const { roomId } = useParams();
+  const { roomId, send, subscribe, connectionStatus, isConnected } =
+    useRoomSocket();
   const navigate = useNavigate();
-  
-  const wsRef = useRef(null);
+
   const chatEndRef = useRef(null);
-  
+
   const [players, setPlayers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
   const [isReady, setIsReady] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [readyInFlight, setReadyInFlight] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const countdownRef = useRef(null);
+  const hasSentInit = useRef(false);
 
-  // Connect to WebSocket once on mount
+  // On mount (or reconnect): reset our ready state on the server and request
+  // a fresh player list so we don't show "Waiting for players..." when
+  // players are already in the room (e.g. returning from a game).
   useEffect(() => {
-    const socket = new WebSocket(
-      `ws://localhost:8080/ws?action=join&room_id=${roomId}`
-    );
-    wsRef.current = socket;
+    if (!isConnected || hasSentInit.current) return;
+    hasSentInit.current = true;
 
-    socket.onopen = () => {
-      console.log("✅ Connected to room:", roomId);
-      setConnectionStatus("connected");
-    };
+    // Reset our own ready state on the server
+    send({
+      type: "reset_ready",
+      room_id: roomId,
+      content: "reset",
+    });
 
-socket.onmessage = (event) => {
-  let data;
-  try {
-    data = JSON.parse(event.data);
-  } catch (err) {
-    console.error("JSON parse failed:", err);
-    console.error("Raw (corrupted) data:", event.data); // ← Only log on error
-    return;
-  }
+    // Ask the server to broadcast the current player list
+    send({
+      type: "request_player_list",
+      room_id: roomId,
+      content: "request",
+    });
 
-  console.log("Valid message:", data); // ← Safe: after parsing
+    // Make sure local state matches
+    setIsReady(false);
+  }, [isConnected, send, roomId]);
 
-if (data.type === "player_list") {
-  try {
-    const playerList = JSON.parse(data.content);
-    console.log("Updating players:", playerList);
-    setPlayers(playerList); // This triggers re-render
-  } catch (e) {
-    console.error("Invalid player_list JSON:", data.content);
-  }
-} else if (data.type === "broadcast") {
-    setMessages(prev => [...prev, {
-      sender: data.sender,
-      content: data.content,  // ← already string!
-      timestamp: data.timestamp,
-    }]);
-  } else if (data.type === "string") {
-    try {
-      const content = JSON.parse(data.content);
-      setMessages(prev => [...prev, {
-        sender: "System",
-        content,
-        timestamp: data.timestamp,
-      }]);
-    } catch (e) {
-      console.error("Failed to parse system message");
-    }
-  }
-};
-
-    socket.onerror = (err) => {
-      console.error("⚠️ WebSocket error:", err);
-      setConnectionStatus("error");
-    };
-
-    socket.onclose = (e) => {
-      console.log("🔌 WebSocket closed:", e.code, e.reason);
-      setConnectionStatus("disconnected");
-      if (e.code !== 1000) {
-        alert("Connection lost. Please rejoin.");
-      }
-    };
-
+  // Reset the init flag when the component unmounts so it fires again
+  // if we navigate back to the lobby later.
+  useEffect(() => {
     return () => {
-      console.log("🧹 Cleanup: Closing WebSocket");
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.close(1000, "Component unmount");
-      }
+      hasSentInit.current = false;
     };
-  }, [roomId]);
+  }, []);
+
+  // Subscribe to incoming WebSocket messages
+  useEffect(() => {
+    const unsubscribe = subscribe((data) => {
+      if (data.type === "player_list") {
+        try {
+          const playerList = JSON.parse(data.content);
+          setPlayers(playerList);
+
+          // When we receive the authoritative player list, sync our local
+          // ready state with what the server says about us. This prevents
+          // the UI from getting out of sync after rapid toggling.
+          const me = playerList.find((p) => p.name === data._myName || false);
+          // We can't reliably know our own name from the list alone
+          // (the server doesn't tag "you"), so we just unlock the button
+          // whenever a fresh list arrives — the server is the source of truth.
+          setReadyInFlight(false);
+        } catch (e) {
+          console.error("Invalid player_list JSON:", data.content);
+        }
+      } else if (data.type === "broadcast") {
+        setMessages((prev) => [
+          ...prev,
+          {
+            sender: data.sender,
+            content: data.content,
+            timestamp: data.timestamp,
+          },
+        ]);
+      } else if (data.type === "string") {
+        try {
+          const content = JSON.parse(data.content);
+          setMessages((prev) => [
+            ...prev,
+            {
+              sender: "System",
+              content,
+              timestamp: data.timestamp,
+            },
+          ]);
+        } catch (e) {
+          console.error("Failed to parse system message");
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [subscribe]);
 
   // Auto-scroll chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = () => {
-		if (wsRef.current?.readyState !== WebSocket.OPEN) {
-  		console.warn("Cannot send — WebSocket not open yet!", wsRef.current?.readyState);
-  		return;
-		}
+  const sendMessage = useCallback(() => {
+    if (!isConnected) {
+      console.warn("Cannot send — WebSocket not open yet!");
+      return;
+    }
     const content = messageInput.trim();
-    if (!content || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn("⚠️ Cannot send message - invalid state");
+    if (!content) {
+      console.warn("⚠️ Cannot send message - empty content");
       return;
     }
 
-    const payload = {
+    send({
       type: "broadcast",
       content: content,
       room_id: roomId,
-    };
+    });
 
-    console.log("📤 Sending message:", payload);
-    wsRef.current.send(JSON.stringify(payload));
-    
     // Optimistic UI update
-    setMessages((prev) => [...prev, {
-      sender: "You",
-      content: content,
-      timestamp: new Date().toISOString(),
-    }]);
-    
-    setMessageInput("");
-  };
+    setMessages((prev) => [
+      ...prev,
+      {
+        sender: "You",
+        content: content,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
 
-  const toggleReady = () => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.warn("⚠️ Cannot toggle ready - not connected");
+    setMessageInput("");
+  }, [isConnected, messageInput, send, roomId]);
+
+  const toggleReady = useCallback(() => {
+    if (!isConnected || readyInFlight) {
       return;
     }
-    
+
     const newState = !isReady;
+
+    // Lock the button until we get a player_list response back
+    setReadyInFlight(true);
     setIsReady(newState);
 
-    const payload = {
+    // Send the DESIRED state — the server will SET it, not toggle
+    send({
       type: "ready_toggle",
       room_id: roomId,
       content: newState ? "ready" : "not ready",
-    };
+    });
 
-    console.log("🎮 Toggling ready:", payload);
-    wsRef.current.send(JSON.stringify(payload));
-  };
+    // Safety timeout: unlock the button after 2s even if we never get
+    // a player_list back (e.g. network issues)
+    setTimeout(() => setReadyInFlight(false), 2000);
+  }, [isConnected, readyInFlight, isReady, send, roomId]);
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = useCallback(() => {
     console.log("👋 Leaving room");
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.close(1000, "User left");
-    }
+    // Navigation away from /room/:roomId/* will unmount RoomLayout,
+    // which triggers the provider cleanup and closes the WebSocket.
     navigate("/");
-  };
+  }, [navigate]);
 
-  const startGame = () => {
-    console.log("🎮 Starting game");
-    navigate(`/game/${roomId}`);
-  };
+  const allReady =
+    players.length > 0 && players.every((p) => p.status === "ready");
+  const someInGame = players.some((p) => p.status === "in_game");
 
-  const isConnected = connectionStatus === "connected";
-  const allReady = players.length > 0 && players.every(p => p.ready);
+  // Auto-start: countdown when all players are ready
+  useEffect(() => {
+    if (allReady && isConnected) {
+      setCountdown(3);
+      countdownRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev === null) return null;
+          if (prev <= 1) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+            const gameText = generateTextSeeded(roomId, 25);
+            // Navigate within the same /room/:roomId layout — WebSocket stays alive
+            navigate(`/room/${roomId}/game`, { state: { text: gameText } });
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      // Someone un-readied or disconnected — cancel countdown
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+      setCountdown(null);
+    }
+
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+  }, [allReady, isConnected, navigate, roomId]);
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <header className="p-4 flex justify-between items-center bg-white shadow">
         <div>
           <h1 className="text-2xl font-bold">Room: {roomId}</h1>
-          <span className={`text-sm ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
+          <span
+            className={`text-sm ${isConnected ? "text-green-600" : "text-red-600"}`}
+          >
             {connectionStatus}
           </span>
         </div>
@@ -183,8 +232,11 @@ if (data.type === "player_list") {
                   className="px-3 py-2 bg-gray-100 rounded-md text-gray-700 flex justify-between"
                 >
                   <span>{p.name}</span>
-                  {p.ready && (
+                  {p.status === "ready" && (
                     <span className="text-green-500 font-medium">Ready</span>
+                  )}
+                  {p.status === "in_game" && (
+                    <span className="text-yellow-500 font-medium">In Game</span>
                   )}
                 </li>
               ))
@@ -197,9 +249,9 @@ if (data.type === "player_list") {
             onClick={toggleReady}
             variant={isReady ? "secondary" : "default"}
             className="mt-4 w-full"
-            disabled={!isConnected}
+            disabled={!isConnected || readyInFlight}
           >
-            {isReady ? "Unready" : "Ready"}
+            {readyInFlight ? "..." : isReady ? "Unready" : "Ready"}
           </Button>
         </aside>
 
@@ -213,8 +265,8 @@ if (data.type === "player_list") {
                   m.sender === "System"
                     ? "text-gray-500 text-center mx-auto"
                     : m.sender === "You"
-                    ? "bg-blue-100 ml-auto"
-                    : "bg-gray-100"
+                      ? "bg-blue-100 ml-auto"
+                      : "bg-gray-100"
                 }`}
               >
                 {m.sender !== "System" && (
@@ -235,8 +287,8 @@ if (data.type === "player_list") {
               className="flex-1"
               disabled={!isConnected}
             />
-            <Button 
-              onClick={sendMessage} 
+            <Button
+              onClick={sendMessage}
               className="ml-2"
               disabled={!isConnected}
             >
@@ -247,13 +299,22 @@ if (data.type === "player_list") {
       </main>
 
       {/* Footer */}
-      <footer className="p-4 bg-white shadow flex justify-center">
-        <Button
-          disabled={!isReady || !allReady || !isConnected}
-          onClick={startGame}
-        >
-          Start Game
-        </Button>
+      <footer className="p-4 bg-white shadow flex justify-center items-center gap-3">
+        {countdown !== null ? (
+          <span className="text-lg font-bold text-green-600 animate-pulse">
+            Starting in {countdown}...
+          </span>
+        ) : allReady ? (
+          <span className="text-sm text-green-600">All players ready!</span>
+        ) : someInGame ? (
+          <span className="text-sm text-yellow-600">
+            Waiting for players to finish their game...
+          </span>
+        ) : (
+          <span className="text-sm text-gray-500">
+            Waiting for all players to ready up...
+          </span>
+        )}
       </footer>
     </div>
   );

@@ -27,7 +27,7 @@ func LoginHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		session.Save()
 
 		// retrieving and redirecting the url recieved for concent page
-		url := cfg.AuthCodeURL(state)		
+		url := cfg.AuthCodeURL(state)
 		c.Redirect(http.StatusFound, url)
 	}
 }
@@ -41,24 +41,24 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 
 		// validating the state
 		if stateInSession != stateInUrl {
-			c.JSON(http.StatusBadRequest, 
+			c.JSON(http.StatusBadRequest,
 				   gin.H{ "error": "Invalid Oauth state"})
-			return 
+			return
 		}
 
 		code := c.Query("code")
 		if code == ""{
 			c.JSON(http.StatusBadRequest, gin.H{"error":"got empty code"})
-			return 
+			return
 		}
 
 		tok, err := cfg.Exchange(context.Background(), code)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, 
+			c.JSON(http.StatusInternalServerError,
 			gin.H{"error": "Error while exchanging tokens"})
-			return 
+			return
 		}
-		
+
 		client := cfg.Client(context.Background(), tok)
 		resp, err := client.Get(UserInfo)
 		if err != nil {
@@ -88,8 +88,8 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 		session.Set("Picture", userInfo.Picture)
 
 		if err := session.Save(); err != nil {
-			logger.Logger.Error("[SESSION] Failed to save: %v\n", 
-														"error", err)
+			logger.Logger.Error("[SESSION] Failed to save session",
+				"error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "session save failed"})
 			return
 		}
@@ -101,13 +101,13 @@ func CallbackHandler( cfg *oauth2.Config) gin.HandlerFunc {
 func LogoutHandler(c *gin.Context)  {
 	session := sessions.Default(c)
 	session.Clear()
-    session.Options(sessions.Options{    
+    session.Options(sessions.Options{
         MaxAge: -1,
-		Path:   "/", 
+		Path:   "/",
     })
     if err := session.Save(); err != nil {
-        logger.Logger.Error("Failed to clear session:", 
-				"error", err)
+        logger.Logger.Error("[SESSION] Failed to clear session",
+            "error", err)
     }
 	c.Redirect(http.StatusFound, "http://localhost:5173/")
 }
