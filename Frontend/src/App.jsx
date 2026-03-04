@@ -2,20 +2,23 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Multiplayer from "./pages/Multiplayer";
 import Lobby from "./pages/Lobby";
-// import Singleplayer from "./pages/Singleplayer";
-// import GameRoom from "./pages/GameRoom";
+import Game from "./pages/Game";
+import RoomLayout from "./pages/RoomLayout";
 
 export default function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/singleplayer" element={<Game mode="single" />} />
         <Route path="/multiplayer" element={<Multiplayer />} />
- 		<Route path="/lobby/:roomId" element={<Lobby />} /> 
+
+        {/* Room-scoped routes share a single WebSocket via RoomLayout */}
+        <Route path="/room/:roomId" element={<RoomLayout />}>
+          <Route path="lobby" element={<Lobby />} />
+          <Route path="game" element={<Game mode="multi" />} />
+        </Route>
       </Routes>
     </Router>
   );
 }
-
-        // <Route path="/singleplayer" element={<Singleplayer />} />
-        // <Route path="/game" element={<GameRoom />} />

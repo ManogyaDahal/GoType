@@ -1,20 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { fetchUser } from "../lib/api";
 
 export default function Multiplayer() {
   const [roomCode, setRoomCode] = useState("");
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-	//Need to work on this functions and design an api to check weather the 
-	//given room with room code exists or not
+  useEffect(() => {
+    fetchUser()
+      .then((u) => {
+        if (!u) {
+          navigate("/", { replace: true });
+        } else {
+          setUser(u);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        navigate("/", { replace: true });
+      });
+  }, [navigate]);
+
   const handleJoinRoom = () => {
     if (!roomCode.trim()) {
       alert("Please enter a valid room code.");
       return;
     }
-    navigate(`/lobby/${roomCode}`);
+    navigate(`/room/${roomCode}/lobby`);
   };
 
   const handleCreateRoom = async () => {
@@ -22,31 +38,39 @@ export default function Multiplayer() {
       const res = await fetch("http://localhost:8080/api/create-room", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include", // This is correct - keep it
+        credentials: "include",
       });
 
       if (!res.ok) {
-        // CHANGED: Better error handling
         if (res.status === 401) {
-          alert("Please login first");
-          navigate("/login");
+          alert("Session expired. Please login again.");
+          navigate("/");
           return;
         }
         throw new Error("Failed to create room");
       }
 
       const data = await res.json();
-      console.log("Room created:", data); // ADDED: Debug log
-      navigate(`/lobby/${data.room_id}`);
+      console.log("Room created:", data);
+      navigate(`/room/${data.room_id}/lobby`);
     } catch (err) {
       console.error("Error creating room:", err);
       alert("Failed to create room.");
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-xl text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-center h-screen gap-6">
       <h1 className="text-4xl font-bold">Multiplayer Mode</h1>
+      <p className="text-muted-foreground">Playing as {user?.name}</p>
 
       <div className="flex flex-col items-center gap-3">
         <Input
