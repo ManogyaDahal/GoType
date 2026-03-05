@@ -1,0 +1,6 @@
+GOOGLE_CLIENT_SECRET=<some_secret_key> 
+GOOGLE_CLIENT_ID=<client_id>
+SESSION_SECRET=sesion-secret-key
+ENV=development
+FRONTEND_URL=http://localhost:5173
+BACKEND_URL=http://localhost:8080
