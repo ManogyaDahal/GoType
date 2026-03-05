@@ -4,9 +4,8 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/ManogyaDahal/GoType/internal/auth"
 	"github.com/ManogyaDahal/GoType/internal/logger"
-
-	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -37,15 +36,18 @@ var upgrader = &websocket.Upgrader{
 				return true
 			}
 		}
-		logger.Logger.Error("[WS] Blocked connection from unauthorized",
+		logger.Logger.Error("[WS] Blocked connection from unauthorized origin",
 			"origin", origin)
 		return false
 	},
 }
 
-// Websocket handler which can be used by authenticated users.
+// AuthenticatedWSHandler handles WebSocket connections for authenticated users.
+// Authentication is done via a short-lived HMAC-signed token passed as ?token=
+// in the URL. The token is issued by /api/whoamI (which runs through the Vercel
+// proxy where the session cookie is valid), so the WebSocket can connect
+// directly to Render without needing the session cookie at all.
 func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
-	//checking for valid websocket upgrade
 	return func(c *gin.Context) {
 		if !websocket.IsWebSocketUpgrade(c.Request) {
 			c.JSON(http.StatusBadRequest,
@@ -53,25 +55,26 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 			return
 		}
 
-		// fetching user email to check if user is logged in
-		session := sessions.Default(c)
-		name := session.Get("Name")
-		if name == nil || name == "" {
+		// Validate the HMAC-signed ws_token from the query string.
+		// This token was issued by WhoAmI and is valid for 2 hours.
+		wsToken := c.Query("token")
+		userName, valid := auth.ValidateWSToken(wsToken)
+		if !valid || userName == "" {
 			c.JSON(http.StatusUnauthorized,
-				gin.H{"error": "The user is not currently logged in"})
+				gin.H{"error": "Invalid or missing WebSocket token"})
 			return
 		}
 
-		//Retrieving the room Id and action from the url
+		// Retrieve room ID and action from the URL
 		roomId := c.Query("room_id")
-		action := Action(c.Query("action")) //converting into Action type
+		action := Action(c.Query("action"))
 
-		//Ensure correct action is selected and actions are performed
 		if !IsValidAction(action) {
 			c.JSON(http.StatusBadRequest,
-				gin.H{"error": "Invalid Action in the url"})
+				gin.H{"error": "Invalid action in the url"})
 			return
 		}
+
 		var currentHub *Hub
 		switch action {
 		case ActionJoin:
@@ -82,13 +85,11 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 			}
 		}
 
-		//upgrading connection from http to websocket
+		// Upgrade HTTP connection to WebSocket
 		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
-			logger.Logger.Error("[WS] Websocket upgrade failed", "error", err)
+			logger.Logger.Error("[WS] WebSocket upgrade failed", "error", err)
 			c.AbortWithStatus(http.StatusBadRequest)
-			// Important: DO NOT call c.JSON() here.
-			// WebSocket handshake already writes headers, so just return
 			return
 		}
 
@@ -96,15 +97,15 @@ func AuthenticatedWSHandler(m *HubManager) gin.HandlerFunc {
 			hub:        currentHub,
 			connection: conn,
 			send:       make(chan []byte, 256),
-			name:       name.(string),
+			name:       userName,
 			status:     StatusIdle,
 		}
 
-		// registering the client
+		// Register the client with the hub
 		client.hub.register <- client
 
-		go client.ReadPump()  //client -> connection
-		go client.WritePump() //connection -> client
+		go client.ReadPump()
+		go client.WritePump()
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -93,4 +94,49 @@ func ValidateState(state string) bool {
 	}
 
 	return true
+}
+
+// GenerateWSToken creates a short-lived HMAC-signed token for WebSocket auth.
+// Format: urlencoded(name).timestamp.signature
+// The frontend fetches this from /api/whoamI (through the Vercel proxy where
+// the session is valid) and passes it as ?token= in the WebSocket URL, which
+// connects directly to Render — bypassing the proxy entirely.
+func GenerateWSToken(name string) string {
+	encodedName := url.QueryEscape(name)
+	timestamp := fmt.Sprintf("%d", time.Now().Unix())
+	payload := encodedName + "." + timestamp
+	signature := signState(payload)
+	return payload + "." + signature
+}
+
+// ValidateWSToken verifies the HMAC-signed WebSocket token and returns the
+// embedded user name. Tokens are valid for 2 hours to accommodate long sessions.
+func ValidateWSToken(token string) (string, bool) {
+	parts := strings.SplitN(token, ".", 3)
+	if len(parts) != 3 {
+		return "", false
+	}
+
+	payload := parts[0] + "." + parts[1]
+	signature := parts[2]
+
+	// Verify HMAC signature — prevents forgery
+	expected := signState(payload)
+	if !hmac.Equal([]byte(signature), []byte(expected)) {
+		return "", false
+	}
+
+	// Verify token is within 2 hours
+	var ts int64
+	fmt.Sscanf(parts[1], "%d", &ts)
+	elapsed := time.Since(time.Unix(ts, 0))
+	if elapsed > 2*time.Hour || elapsed < -1*time.Minute {
+		return "", false
+	}
+
+	name, err := url.QueryUnescape(parts[0])
+	if err != nil {
+		return "", false
+	}
+	return name, true
 }

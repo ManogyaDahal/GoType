@@ -122,7 +122,9 @@ func LogoutHandler(c *gin.Context) {
 	c.Redirect(http.StatusFound, frontendURL()+"/")
 }
 
-// handler Returns the current user
+// WhoAmI returns the current user and a short-lived WebSocket auth token.
+// The ws_token lets the frontend authenticate WebSocket connections that go
+// directly to Render, bypassing the Vercel proxy where the session lives.
 func WhoAmI(c *gin.Context) {
 	session := sessions.Default(c)
 	name := session.Get("Name")
@@ -132,5 +134,11 @@ func WhoAmI(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"name": name})
+	nameStr := name.(string)
+	wsToken := GenerateWSToken(nameStr)
+
+	c.JSON(http.StatusOK, gin.H{
+		"name":     nameStr,
+		"ws_token": wsToken,
+	})
 }

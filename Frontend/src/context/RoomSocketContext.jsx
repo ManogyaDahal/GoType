@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useParams } from "react-router-dom";
 import { WS_URL } from "@/lib/config";
+import { fetchUser } from "@/lib/api";
 
 const RoomSocketContext = createContext(null);
 
@@ -33,12 +34,32 @@ export function useOptionalRoomSocket() {
  * Provides a single WebSocket connection for the entire room.
  * Wraps both Lobby and Game routes so the connection persists
  * across navigation between them.
+ *
+ * Auth flow:
+ *  1. Fetches /api/whoamI through the Vercel proxy (session cookie is valid there).
+ *  2. Extracts the short-lived HMAC ws_token from the response.
+ *  3. Passes the token as ?token= in the WebSocket URL, which connects
+ *     directly to Render — no session cookie needed on that domain.
  */
 export function RoomSocketProvider({ children }) {
   const { roomId } = useParams();
   const wsRef = useRef(null);
   const listenersRef = useRef(new Set());
   const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [wsToken, setWsToken] = useState(null);
+
+  // Step 1: fetch the ws_token from whoamI on mount.
+  // This call goes through the Vercel proxy where the session cookie is valid.
+  useEffect(() => {
+    fetchUser().then((user) => {
+      if (user?.ws_token) {
+        setWsToken(user.ws_token);
+      } else {
+        // Not logged in or token missing — mark as error so the UI can react.
+        setConnectionStatus("error");
+      }
+    });
+  }, []);
 
   // Subscribe to incoming messages. Returns an unsubscribe function.
   const subscribe = useCallback((callback) => {
@@ -48,18 +69,18 @@ export function RoomSocketProvider({ children }) {
     };
   }, []);
 
-  // Send a JSON payload over the socket
+  // Send a JSON payload over the socket.
   const send = useCallback((payload) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(payload));
     }
   }, []);
 
-  // Establish the WebSocket connection once per roomId
+  // Step 2: open the WebSocket once both roomId and wsToken are available.
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || !wsToken) return;
 
-    // If there's already an open connection for this room, don't re-create
+    // If there's already an open connection for this room, don't re-create.
     if (
       wsRef.current &&
       (wsRef.current.readyState === WebSocket.OPEN ||
@@ -70,7 +91,11 @@ export function RoomSocketProvider({ children }) {
 
     setConnectionStatus("connecting");
 
-    const socket = new WebSocket(`${WS_URL}/ws?action=join&room_id=${roomId}`);
+    // Connect directly to Render with the HMAC token — Vercel cannot proxy
+    // WebSocket connections, so WS_URL must point to the Render backend.
+    const socket = new WebSocket(
+      `${WS_URL}/ws?action=join&room_id=${roomId}&token=${encodeURIComponent(wsToken)}`,
+    );
     wsRef.current = socket;
 
     socket.onopen = () => {
@@ -85,7 +110,7 @@ export function RoomSocketProvider({ children }) {
       } catch {
         return;
       }
-      // Fan out to all subscribers
+      // Fan out to all subscribers.
       for (const listener of listenersRef.current) {
         try {
           listener(data);
@@ -115,7 +140,7 @@ export function RoomSocketProvider({ children }) {
       }
       wsRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, wsToken]);
 
   const value = useMemo(
     () => ({
