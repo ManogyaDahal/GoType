@@ -21,7 +21,7 @@ func InitSesssion(router *gin.Engine) {
 			Path:     "/",
 			MaxAge:   7 * 86400,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteNoneMode,
 			Secure:   true,
 		})
 	} else {
