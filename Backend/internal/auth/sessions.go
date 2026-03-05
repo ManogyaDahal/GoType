@@ -1,10 +1,16 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -21,7 +27,7 @@ func InitSesssion(router *gin.Engine) {
 			Path:     "/",
 			MaxAge:   7 * 86400,
 			HttpOnly: true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 			Secure:   true,
 		})
 	} else {
@@ -37,9 +43,54 @@ func InitSesssion(router *gin.Engine) {
 	router.Use(sessions.Sessions("session", store))
 }
 
-// Generates random state
+// signState produces an HMAC-SHA256 signature for the given message.
+func signState(message string) string {
+	secret := os.Getenv("SESSION_SECRET")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(message))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// GenerateState creates a self-validating HMAC-signed state token.
+// Format: nonce.timestamp.signature
+// This eliminates the need to store state in the session cookie,
+// so the OAuth callback doesn't depend on cookies surviving the redirect chain.
 func GenerateState() string {
-	data := make([]byte, 16)
-	rand.Read(data)
-	return base64.URLEncoding.EncodeToString(data)
+	nonce := make([]byte, 16)
+	rand.Read(nonce)
+	nonceStr := base64.URLEncoding.EncodeToString(nonce)
+	timestamp := fmt.Sprintf("%d", time.Now().Unix())
+
+	payload := nonceStr + "." + timestamp
+	signature := signState(payload)
+
+	return payload + "." + signature
+}
+
+// ValidateState verifies that the HMAC-signed state token is valid
+// and was created within the last 10 minutes.
+func ValidateState(state string) bool {
+	parts := strings.SplitN(state, ".", 3)
+	if len(parts) != 3 {
+		return false
+	}
+
+	payload := parts[0] + "." + parts[1]
+	signature := parts[2]
+
+	// Verify HMAC signature
+	expected := signState(payload)
+	if !hmac.Equal([]byte(signature), []byte(expected)) {
+		return false
+	}
+
+	// Verify timestamp is within 10 minutes
+	var ts int64
+	fmt.Sscanf(parts[1], "%d", &ts)
+	elapsed := time.Since(time.Unix(ts, 0))
+	if elapsed > 10*time.Minute || elapsed < -1*time.Minute {
+		return false
+	}
+
+	return true
 }

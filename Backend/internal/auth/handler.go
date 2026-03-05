@@ -30,11 +30,10 @@ func HomeHandler(c *gin.Context) {
 // handles the /login route
 func LoginHandler(cfg *oauth2.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		//Loading and setting session state
-		session := sessions.Default(c)
+		// Generate a self-validating HMAC-signed state token.
+		// No need to store it in the session — the callback will
+		// verify the signature instead.
 		state := GenerateState()
-		session.Set("oauth_state", state)
-		session.Save()
 
 		// retrieving and redirecting the url recieved for concent page
 		url := cfg.AuthCodeURL(state)
@@ -45,12 +44,12 @@ func LoginHandler(cfg *oauth2.Config) gin.HandlerFunc {
 // Callback Handler handles
 func CallbackHandler(cfg *oauth2.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		session := sessions.Default(c)
-		stateInSession := session.Get("oauth_state")
 		stateInUrl := c.Query("state")
 
-		// validating the state
-		if stateInSession != stateInUrl {
+		// Validate the HMAC-signed state token.
+		// This does NOT require reading from the session cookie,
+		// so it works even when cookies aren't forwarded through a proxy.
+		if !ValidateState(stateInUrl) {
 			c.JSON(http.StatusBadRequest,
 				gin.H{"error": "Invalid Oauth state"})
 			return
@@ -92,6 +91,7 @@ func CallbackHandler(cfg *oauth2.Config) gin.HandlerFunc {
 		}
 
 		// setting values in session
+		session := sessions.Default(c)
 		session.Set("Name", userInfo.Name)
 		session.Set("Email", userInfo.Email)
 		session.Set("VerifiedEmail", userInfo.VerifiedEmail)
